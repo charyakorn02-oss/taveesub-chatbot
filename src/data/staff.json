@@ -1,0 +1,32 @@
+[
+  {
+    "id": "staff-001",
+    "name": "สมชาย ใจดี",
+    "branchId": "branch-rangsit",
+    "role": "เซล",
+    "phone": "081-xxx-xxxx",
+    "active": true,
+    "openLeadsCount": 0,
+    "lastAssignedAt": null
+  },
+  {
+    "id": "staff-002",
+    "name": "สมหญิง มั่นคง",
+    "branchId": "branch-lamlukka",
+    "role": "เซล",
+    "phone": "082-xxx-xxxx",
+    "active": true,
+    "openLeadsCount": 0,
+    "lastAssignedAt": null
+  },
+  {
+    "id": "staff-003",
+    "name": "ช่างเอ",
+    "branchId": "branch-nawamin",
+    "role": "ช่าง",
+    "phone": "083-xxx-xxxx",
+    "active": true,
+    "openLeadsCount": 0,
+    "lastAssignedAt": null
+  }
+]
