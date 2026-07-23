@@ -36,6 +36,11 @@ function rowToObject(row) {
   return row.toObject();
 }
 
+function genId(prefix) {
+  return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+}
+
+// --- Branches ---
 async function getActiveBranches() {
   const rows = await getRows('Branches');
   return rows.map(rowToObject).filter((r) => String(r.active).toUpperCase() === 'TRUE');
@@ -46,6 +51,7 @@ async function getBranchById(id) {
   return branches.find((b) => b.id === id) || null;
 }
 
+// --- Staff ---
 async function getActiveStaff() {
   const rows = await getRows('Staff');
   return rows.map(rowToObject).filter((r) => String(r.active).toUpperCase() === 'TRUE');
@@ -63,6 +69,23 @@ async function findStaffByNameFuzzy(name) {
   return staff.find((s) => (s.name || '').toLowerCase().includes(lower)) || null;
 }
 
+async function findStaffById(id) {
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('id') === id);
+  return row ? rowToObject(row) : null;
+}
+
+// พนักงานลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียน <รหัสพนักงาน>")
+async function setStaffLineUserId(staffId, lineUserId) {
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('id') === staffId);
+  if (!row) return false;
+  row.set('lineUserId', lineUserId);
+  await row.save();
+  return true;
+}
+
+// เลือกพนักงานคนถัดไปในคิวของสาขานั้น (งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
 async function pickNextInQueue(branchId) {
   const staff = await getStaffForBranch(branchId);
   if (staff.length === 0) return null;
@@ -87,6 +110,7 @@ async function incrementOpenLeadsCount(staffId) {
   await row.save();
 }
 
+// --- FAQ / Models ---
 async function getFaqList() {
   const rows = await getRows('FAQ');
   return rows.map(rowToObject);
@@ -97,11 +121,15 @@ async function getModelList() {
   return rows.map(rowToObject);
 }
 
+// --- Leads ---
+// สร้าง lead ใหม่ + คืน leadId กลับไป เพื่อเอาไปผูกกับปุ่ม "รับทราบแล้ว" ตอนส่ง LINE หาเซล
 async function appendLead(lead) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Leads'];
+  const leadId = genId('LD');
+  const now = new Date().toISOString();
   await sheet.addRow({
-    createdAt: new Date().toISOString(),
+    createdAt: now,
     platform: lead.platform || '',
     customerId: lead.customerId || '',
     intentCategory: lead.intentCategory || '',
@@ -112,12 +140,45 @@ async function appendLead(lead) {
     phone: lead.phone || '',
     locationText: lead.locationText || '',
     status: lead.status || 'new',
+    leadId,
+    notifiedAt: now,
+    acknowledgedAt: '',
+    responseTimeMin: '',
   });
+  return leadId;
 }
 
-async function getBookingsForBranchDate(branchId, date) {
+// เซลกดปุ่ม/พิมพ์รับทราบผ่าน LINE -> บันทึกเวลาที่ตอบกลับ และคำนวณว่าใช้เวลากี่นาที
+async function acknowledgeLead(leadId) {
+  const rows = await getRows('Leads');
+  const row = rows.find((r) => r.get('leadId') === leadId);
+  if (!row) return null;
+
+  if (row.get('acknowledgedAt')) {
+    return {
+      staffName: row.get('staffName'),
+      responseTimeMin: row.get('responseTimeMin'),
+      alreadyAcknowledged: true,
+    };
+  }
+
+  const notifiedAt = row.get('notifiedAt');
+  const now = new Date();
+  const diffMin = notifiedAt ? (now.getTime() - new Date(notifiedAt).getTime()) / 60000 : null;
+  const diffStr = diffMin !== null ? diffMin.toFixed(1) : '';
+
+  row.set('acknowledgedAt', now.toISOString());
+  row.set('responseTimeMin', diffStr);
+  row.set('status', 'acknowledged');
+  await row.save();
+
+  return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
+}
+
+// --- Bookings ---
+async function getBookingsForBranchDate(branchId, serviceDate) {
   const rows = await getRows('Bookings');
-  return rows.map(rowToObject).filter((r) => r.branchId === branchId && r.serviceDate === date);
+  return rows.map(rowToObject).filter((r) => r.branchId === branchId && r.serviceDate === serviceDate);
 }
 
 async function appendBooking(booking) {
@@ -140,12 +201,15 @@ module.exports = {
   getBranchById,
   getActiveStaff,
   findStaffByNameFuzzy,
+  findStaffById,
+  setStaffLineUserId,
   getStaffForBranch,
   pickNextInQueue,
   incrementOpenLeadsCount,
   getFaqList,
   getModelList,
   appendLead,
+  acknowledgeLead,
   getBookingsForBranchDate,
   appendBooking,
 };
