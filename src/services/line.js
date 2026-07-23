@@ -1,4 +1,3 @@
-// ฟังก์ชันเรียก LINE Messaging API — ตอบลูกค้า (Reply) และแจ้งกลุ่มสาขา (Push)
 "use strict";
 
 const axios = require("axios");
@@ -14,35 +13,62 @@ function channelToken() {
 
 function headers() {
   return {
-    Authorization: `Bearer ${channelToken()}`,
+    Authorization: "Bearer " + channelToken(),
     "Content-Type": "application/json",
   };
 }
 
-// ตอบกลับลูกค้าโดยตรง (ใช้ replyToken ที่ได้จาก webhook event — ใช้ได้ครั้งเดียว)
 async function replyMessage(replyToken, text) {
   return axios.post(
-    `${LINE_API}/reply`,
+    LINE_API + "/reply",
     { replyToken, messages: [{ type: "text", text }] },
     { headers: headers() }
   );
 }
 
-// ยิงข้อความเข้ากลุ่ม LINE ของสาขา (ต้องมี Group ID ที่แอดมินเพิ่มบอทเข้ากลุ่มไว้ก่อน)
-async function pushMessage(toGroupId, text) {
+async function pushMessage(to, text) {
   return axios.post(
-    `${LINE_API}/push`,
-    { to: toGroupId, messages: [{ type: "text", text }] },
+    LINE_API + "/push",
+    { to, messages: [{ type: "text", text }] },
     { headers: headers() }
   );
 }
 
-// ตรวจลายเซ็นของ Webhook จาก LINE เพื่อความปลอดภัย (ป้องกันคนอื่นปลอมยิง request เข้ามา)
+// ยิงข้อความหาเซล พร้อมปุ่ม Quick Reply "รับทราบแล้ว" ผูกกับ leadId
+async function pushMessageWithAck(userId, text, leadId) {
+  return axios.post(
+    LINE_API + "/push",
+    {
+      to: userId,
+      messages: [
+        {
+          type: "text",
+          text,
+          quickReply: {
+            items: [
+              {
+                type: "action",
+                action: {
+                  type: "postback",
+                  label: "รับทราบแล้ว",
+                  data: "ack:" + leadId,
+                  displayText: "รับทราบแล้ว",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    { headers: headers() }
+  );
+}
+
 function verifySignature(rawBody, signature) {
   const secret = process.env.LINE_CHANNEL_SECRET;
-  if (!secret) return true; // ถ้ายังไม่ตั้งค่า secret จะข้ามการเช็ค (ใช้ตอน dev เท่านั้น — ห้ามขึ้น production แบบนี้)
+  if (!secret) return true;
   const hash = crypto.createHmac("SHA256", secret).update(rawBody).digest("base64");
   return hash === signature;
 }
 
-module.exports = { replyMessage, pushMessage, verifySignature };
+module.exports = { replyMessage, pushMessage, pushMessageWithAck, verifySignature };
