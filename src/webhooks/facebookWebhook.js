@@ -3,7 +3,6 @@
 
 const express = require("express");
 const router = express.Router();
-
 const claude = require("../services/claude");
 const facebook = require("../services/facebook");
 const routing = require("../routing/router");
@@ -31,7 +30,7 @@ router.post("/facebook", async (req, res) => {
     if (body.object !== "page") return;
 
     for (const entry of body.entry || []) {
-      // 1) คอมเมนต์ใหม่ใต้โพสต์ (Pull to Inbox)
+      // 1) คอมเมนต์ใหม่ได้โพสต์ (Pull to Inbox)
       for (const change of entry.changes || []) {
         if (change.field === "feed" && change.value && change.value.item === "comment") {
           await handleComment(change.value);
@@ -80,12 +79,18 @@ async function handleMessengerText(psid, text) {
     session.history.push({ role: "user", content: text });
     session.history.push({ role: "assistant", content: JSON.stringify(analysis) });
 
+    // ดึงชื่อ Facebook ของลูกค้า เก็บไว้ครั้งเดียวใน session กันเรียก API ซ้ำทุกข้อความ
+    if (!session.customerName) {
+      session.customerName = await facebook.getProfile(psid);
+    }
+
     const replyText = await routing.handleTurn({
       session,
       analysis,
       rawMessage: text,
       platform: "facebook",
       userId: psid,
+      customerName: session.customerName,
     });
 
     saveSession("facebook", psid, session);
