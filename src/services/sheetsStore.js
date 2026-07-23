@@ -51,6 +51,22 @@ async function getBranchById(id) {
   return branches.find((b) => b.id === id) || null;
 }
 
+// ทุกสาขา ไม่กรอง active (ใช้ตอนลงทะเบียนหัวหน้าสาขา เผื่อสาขายังไม่เปิด active)
+async function getAllBranches() {
+  const rows = await getRows('Branches');
+  return rows.map(rowToObject);
+}
+
+// หัวหน้าสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนหัวหน้า <รหัสสาขา>")
+async function setBranchSupervisorLineUserId(branchId, lineUserId) {
+  const rows = await getRows('Branches');
+  const row = rows.find((r) => r.get('id') === branchId);
+  if (!row) return false;
+  row.set('supervisorLineUserId', lineUserId);
+  await row.save();
+  return true;
+}
+
 // --- Staff ---
 async function getActiveStaff() {
   const rows = await getRows('Staff');
@@ -132,6 +148,7 @@ async function appendLead(lead) {
     createdAt: now,
     platform: lead.platform || '',
     customerId: lead.customerId || '',
+    customerName: lead.customerName || '',
     intentCategory: lead.intentCategory || '',
     modelOrIssue: lead.modelOrIssue || '',
     branchId: lead.branchId || '',
@@ -144,6 +161,7 @@ async function appendLead(lead) {
     notifiedAt: now,
     acknowledgedAt: '',
     responseTimeMin: '',
+    escalatedAt: '',
   });
   return leadId;
 }
@@ -175,6 +193,39 @@ async function acknowledgeLead(leadId) {
   return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
 }
 
+// เอาไว้ให้ job ตรวจสอบเป็นระยะๆ ว่า lead ไหนเซลยังไม่รับทราบเกินเวลาที่กำหนด (นาที) แล้วยังไม่เคยแจ้งหัวหน้ามาก่อน
+async function getPendingEscalations(thresholdMinutes) {
+  const rows = await getRows('Leads');
+  const now = Date.now();
+  const pending = [];
+
+  for (const row of rows) {
+    const obj = rowToObject(row);
+    if (!obj.notifiedAt) continue;
+    if (obj.acknowledgedAt) continue;
+    if (obj.escalatedAt) continue;
+
+    const notifiedTime = new Date(obj.notifiedAt).getTime();
+    if (Number.isNaN(notifiedTime)) continue;
+
+    const diffMin = (now - notifiedTime) / 60000;
+    if (diffMin >= thresholdMinutes) {
+      pending.push(obj);
+    }
+  }
+  return pending;
+}
+
+// บันทึกว่า lead นี้ถูกแจ้งเตือนหัวหน้าสาขาไปแล้ว (กันแจ้งซ้ำ)
+async function markLeadEscalated(leadId) {
+  const rows = await getRows('Leads');
+  const row = rows.find((r) => r.get('leadId') === leadId);
+  if (!row) return false;
+  row.set('escalatedAt', new Date().toISOString());
+  await row.save();
+  return true;
+}
+
 // --- Bookings ---
 async function getBookingsForBranchDate(branchId, serviceDate) {
   const rows = await getRows('Bookings');
@@ -199,6 +250,8 @@ async function appendBooking(booking) {
 module.exports = {
   getActiveBranches,
   getBranchById,
+  getAllBranches,
+  setBranchSupervisorLineUserId,
   getActiveStaff,
   findStaffByNameFuzzy,
   findStaffById,
@@ -210,6 +263,8 @@ module.exports = {
   getModelList,
   appendLead,
   acknowledgeLead,
+  getPendingEscalations,
+  markLeadEscalated,
   getBookingsForBranchDate,
   appendBooking,
 };
