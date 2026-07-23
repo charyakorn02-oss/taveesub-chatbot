@@ -26,6 +26,19 @@ async function replyMessage(replyToken, text) {
   );
 }
 
+// ดึงชื่อ LINE display name ของลูกค้า (เก็บไว้ตอนสร้าง lead เพื่อรู้ว่าคนนี้ทักมาจาก LINE ชื่ออะไร)
+async function getProfile(userId) {
+  try {
+    const res = await axios.get(LINE_API.replace("/message", "") + "/profile/" + userId, {
+      headers: headers(),
+    });
+    return res.data && res.data.displayName ? res.data.displayName : "";
+  } catch (err) {
+    console.error("[line] getProfile error:", err.message);
+    return "";
+  }
+}
+
 async function pushMessage(to, text) {
   return axios.post(
     LINE_API + "/push",
@@ -71,4 +84,4 @@ function verifySignature(rawBody, signature) {
   return hash === signature;
 }
 
-module.exports = { replyMessage, pushMessage, pushMessageWithAck, verifySignature };
+module.exports = { replyMessage, pushMessage, pushMessageWithAck, getProfile, verifySignature };
