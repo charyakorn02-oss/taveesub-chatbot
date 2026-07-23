@@ -17,8 +17,9 @@ function containsHighIntentKeyword(text) {
 /**
  * จัดการ turn การคุยหนึ่งรอบ: เรียก Claude มาแล้ว (analysis), ตัดสินใจว่า handoff หรือคุยต่อ
  * คืนค่าข้อความสุดท้ายที่จะส่งกลับลูกค้า
+ * customerName: ชื่อโปรไฟล์ลูกค้าจากแพลตฟอร์มนั้นๆ (LINE display name / Facebook ชื่อ-นามสกุล) เอาไว้บันทึกลง Lead
  */
-async function handleTurn({ session, analysis, rawMessage, platform, userId, replyContext }) {
+async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   // สะสมข้อมูลที่ Claude ดึงได้ในรอบนี้เข้ากับของเดิม (ไม่ให้ค่าที่เคยทายไปถ้ารอบใหม่ส่ง null มา)
   const collected = session.collected;
   const fieldsToMerge = [
@@ -44,21 +45,21 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, rep
   }
 
   session.fallbackCount = 0;
-  return performHandoff({ collected, platform, userId, replyContext, highIntent });
+  return performHandoff({ collected, platform, userId, customerName, replyContext, highIntent });
 }
 
-async function performHandoff({ collected, platform, userId, replyContext, highIntent }) {
+async function performHandoff({ collected, platform, userId, customerName, replyContext, highIntent }) {
   const intent = collected.intent_category || "general";
   if (intent === "buying_new" || intent === "trade_in") {
-    return handleSalesHandoff({ collected, intent, platform, userId, replyContext, highIntent });
+    return handleSalesHandoff({ collected, intent, platform, userId, customerName, replyContext, highIntent });
   }
   if (intent === "service") {
-    return handleServiceHandoff({ collected, platform, userId, replyContext });
+    return handleServiceHandoff({ collected, platform, userId, customerName, replyContext });
   }
   return "เดี๋ยวให้ทีมงานติดต่อกลับไปนะครับ ขอบคุณที่ทักมาครับ 🙏";
 }
 
-async function handleSalesHandoff({ collected, intent, platform, userId, replyContext, highIntent }) {
+async function handleSalesHandoff({ collected, intent, platform, userId, customerName, replyContext, highIntent }) {
   let assignedStaff = null;
   let assignedBranch = null;
   let routingMethod = "round_robin";
@@ -105,6 +106,7 @@ async function handleSalesHandoff({ collected, intent, platform, userId, replyCo
   const lead = {
     platform,
     customerId: userId,
+    customerName: customerName || "",
     intentCategory: intent,
     modelOrIssue: collected.model_or_issue || null,
     branchId: assignedBranch.id,
@@ -112,7 +114,7 @@ async function handleSalesHandoff({ collected, intent, platform, userId, replyCo
     staffPhone: assignedStaff.phone,
     phone: collected.phone || null,
     locationText: collected.location_text || null,
-    status: "New",
+    status: "new",
   };
 
   const leadId = await store.appendLead(lead);
@@ -124,9 +126,11 @@ async function handleSalesHandoff({ collected, intent, platform, userId, replyCo
 
   const badge = routingMethod === "requested" ? `🌟 ลูกค้าประจำของ ${assignedStaff.name}\n` : "";
   const deliveryNote = collected.delivery_preference ? `วิธีรับรถ: ${collected.delivery_preference}\n` : "";
+  const customerNameNote = customerName ? `ชื่อลูกค้า (${platform}): ${customerName}\n` : "";
   const notifyText =
     badge +
     "🔔 Lead ใหม่ (" + platform + ")\n" +
+    customerNameNote +
     "สาขา: " + assignedBranch.name + "\n" +
     "รุ่นที่สนใจ: " + (collected.model_or_issue || "-") + "\n" +
     deliveryNote +
@@ -138,10 +142,15 @@ async function handleSalesHandoff({ collected, intent, platform, userId, replyCo
   await notifyStaffDirect(assignedStaff, notifyText, leadId);
 
   const deliveryLine = collected.delivery_preference ? `เรื่อง${collected.delivery_preference}` : "";
-  return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ ขอบคุณที่สนใจครับ 🙏`;
+  // ถ้าเซลใส่ลิงก์แอดไลน์ส่วนตัวไว้ในชีต Staff (คอลัมน์ lineAddUrl) ให้ส่งลิงก์นี้ให้ลูกค้าแอดตรงได้เลย
+  const addLineNote = assignedStaff.lineAddUrl
+    ? `\nแอดไลน์ ${assignedStaff.name} คุยต่อได้เลยครับ: ${assignedStaff.lineAddUrl}`
+    : "";
+
+  return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
 }
 
-async function handleServiceHandoff({ collected, platform, userId, replyContext }) {
+async function handleServiceHandoff({ collected, platform, userId, customerName, replyContext }) {
   const branches = await store.getActiveBranches();
   let assignedBranch = null;
 
@@ -173,12 +182,14 @@ async function handleServiceHandoff({ collected, platform, userId, replyContext 
     serviceDate: dateStr,
     issue: collected.model_or_issue || null,
     phone: collected.phone || null,
-    status: "New",
+    status: "new",
   };
   await store.appendBooking(booking);
 
+  const customerNameNote = customerName ? `ชื่อลูกค้า (${platform}): ${customerName}\n` : "";
   const notifyText =
     "🔧 นัดซ่อมใหม่ (" + platform + ")\n" +
+    customerNameNote +
     "สาขา: " + assignedBranch.name + "\n" +
     "วันที่นัด: " + (dateStr || "ยังไม่ระบุ") + "\n" +
     "อาการ/งาน: " + (collected.model_or_issue || "-") + "\n" +
