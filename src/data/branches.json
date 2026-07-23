@@ -1,0 +1,46 @@
+[
+  {
+    "id": "branch-rangsit",
+    "name": "สาขารังสิต-คลอง3",
+    "address": "แก้เป็นที่อยู่จริง",
+    "province": "ปทุมธานี",
+    "lat": 14.0208,
+    "long": 100.6108,
+    "active": true,
+    "maxServiceSlotsPerDay": 15,
+    "lineGroupId": "GROUP_ID_RANGSIT_ใส่ของจริง"
+  },
+  {
+    "id": "branch-lamlukka",
+    "name": "สาขาลำลูกกา-คลอง4",
+    "address": "แก้เป็นที่อยู่จริง",
+    "province": "ปทุมธานี",
+    "lat": 13.9989,
+    "long": 100.7181,
+    "active": true,
+    "maxServiceSlotsPerDay": 12,
+    "lineGroupId": "GROUP_ID_LAMLUKKA_ใส่ของจริง"
+  },
+  {
+    "id": "branch-nawamin",
+    "name": "สาขานวมินทร์",
+    "address": "แก้เป็นที่อยู่จริง",
+    "province": "กรุงเทพมหานคร",
+    "lat": 13.808,
+    "long": 100.658,
+    "active": true,
+    "maxServiceSlotsPerDay": 10,
+    "lineGroupId": "GROUP_ID_NAWAMIN_ใส่ของจริง"
+  },
+  {
+    "id": "branch-hq",
+    "name": "สำนักงานใหญ่",
+    "address": "แก้เป็นที่อยู่จริง",
+    "province": "กรุงเทพมหานคร",
+    "lat": 13.7563,
+    "long": 100.5018,
+    "active": true,
+    "maxServiceSlotsPerDay": 20,
+    "lineGroupId": "GROUP_ID_HQ_ใส่ของจริง"
+  }
+]
