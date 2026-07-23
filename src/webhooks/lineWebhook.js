@@ -14,6 +14,10 @@ const { getSession, saveSession } = require("../session/sessionStore");
 // (ต้องทำครั้งเดียว หลังจากนั้นระบบจะส่ง lead ตรงมาหาแอคเคาท์ไลน์นี้)
 const REGISTER_KEYWORD = "ลงทะเบียน";
 
+// คำสั่งลับสำหรับหัวหน้าสาขา: พิมพ์ "ลงทะเบียนหัวหน้า <รหัสสาขา>" ทักมาที่ LINE OA
+// เพื่อผูก LINE userId ของหัวหน้าเข้ากับสาขา ใช้ตอน escalate lead ที่เซลตอบช้า
+const REGISTER_SUPERVISOR_KEYWORD = "ลงทะเบียนหัวหน้า";
+
 // LINE ต้องการ raw body สำหรับตรวจลายเซ็น (เพิ่ม middleware เฉพาะ route นี้ใน server.js แล้ว)
 router.post("/line", async (req, res) => {
   const signature = req.headers["x-line-signature"];
@@ -44,6 +48,11 @@ async function handleLineText(event) {
   const text = (event.message.text || "").trim();
   const replyToken = event.replyToken;
 
+  // ---- flow ลงทะเบียนหัวหน้าสาขา (เช็คก่อน เพราะขึ้นต้นคำเดียวกับลงทะเบียนพนักงาน) ----
+  if (text.startsWith(REGISTER_SUPERVISOR_KEYWORD)) {
+    return handleSupervisorRegister(event, userId, text, replyToken);
+  }
+
   // ---- flow ลงทะเบียนพนักงาน ----
   if (text.startsWith(REGISTER_KEYWORD)) {
     return handleStaffRegister(event, userId, text, replyToken);
@@ -57,7 +66,20 @@ async function handleLineText(event) {
     const analysis = await claude.analyzeMessage(session.history, text, session.fallbackCount);
     session.history.push({ role: "user", content: text });
     session.history.push({ role: "assistant", content: JSON.stringify(analysis) });
-    const replyText = await routing.handleTurn({ session, analysis, rawMessage: text, platform: "line", userId });
+
+    // ดึงชื่อ LINE ของลูกค้า เก็บไว้ครั้งเดียวใน session กันเรียก API ซ้ำทุกข้อความ
+    if (!session.customerName) {
+      session.customerName = await line.getProfile(userId);
+    }
+
+    const replyText = await routing.handleTurn({
+      session,
+      analysis,
+      rawMessage: text,
+      platform: "line",
+      userId,
+      customerName: session.customerName,
+    });
     saveSession("line", userId, session);
     await line.replyMessage(replyToken, replyText);
   } catch (err) {
@@ -84,6 +106,32 @@ async function handleStaffRegister(event, userId, text, replyToken) {
     await line.replyMessage(replyToken, `ลงทะเบียนสำเร็จครับ คุณ ${staff.name} ✅ ต่อไปนี้ lead ใหม่จะส่งแจ้งเตือนมาที่ไลน์นี้โดยตรง`);
   } catch (err) {
     console.error("[lineWebhook] handleStaffRegister error:", err.message);
+    try {
+      await line.replyMessage(replyToken, "ขอโทษครับ ลงทะเบียนไม่สำเร็จ ลองใหม่อีกครั้งนะครับ");
+    } catch (_) {}
+  }
+}
+
+async function handleSupervisorRegister(event, userId, text, replyToken) {
+  const branchId = text.replace(REGISTER_SUPERVISOR_KEYWORD, "").trim();
+  if (!branchId) {
+    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียนหัวหน้า <รหัสสาขา> เช่น ลงทะเบียนหัวหน้า branch1");
+    return;
+  }
+  try {
+    const branches = await store.getAllBranches();
+    const branch = branches.find((b) => b.id === branchId);
+    if (!branch) {
+      await line.replyMessage(replyToken, `ไม่พบรหัสสาขา "${branchId}" ในระบบ รบกวนเช็ครหัสในชีต Branches อีกครั้งนะครับ`);
+      return;
+    }
+    await store.setBranchSupervisorLineUserId(branchId, userId);
+    await line.replyMessage(
+      replyToken,
+      `ลงทะเบียนสำเร็จครับ หัวหน้าสาขา ${branch.name} ✅ ต่อไปนี้ถ้ามีเซลตอบ lead ช้าเกินกำหนด ระบบจะแจ้งเตือนมาที่ไลน์นี้`
+    );
+  } catch (err) {
+    console.error("[lineWebhook] handleSupervisorRegister error:", err.message);
     try {
       await line.replyMessage(replyToken, "ขอโทษครับ ลงทะเบียนไม่สำเร็จ ลองใหม่อีกครั้งนะครับ");
     } catch (_) {}
