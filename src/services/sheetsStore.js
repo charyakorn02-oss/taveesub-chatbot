@@ -112,7 +112,7 @@ async function setStaffLineUserId(staffId, lineUserId) {
   return true;
 }
 
-// เลือกพนักงานคนถัดไปในคิวของสาขานั้น (งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
+// เลือกพนักงานคนถัดไปในคิว "ขายรถใหม่" ของสาขานั้น (งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
 async function pickNextInQueue(branchId) {
   const staff = await getStaffForBranch(branchId);
   if (staff.length === 0) return null;
@@ -134,6 +134,32 @@ async function incrementOpenLeadsCount(staffId) {
   const current = Number(row.get('openLeadsCount') || 0);
   row.set('openLeadsCount', current + 1);
   row.set('lastAssignedAt', new Date().toISOString());
+  await row.save();
+}
+
+// เลือกพนักงานคนถัดไปในคิว "เทิร์นรถ" ของสาขานั้น แยกจากคิวขายรถใหม่โดยเฉพาะ
+// (ใช้คอลัมน์ openTradeInCount / lastAssignedTradeInAt คนละชุดกับ openLeadsCount / lastAssignedAt)
+async function pickNextInTradeInQueue(branchId) {
+  const staff = await getStaffForBranch(branchId);
+  if (staff.length === 0) return null;
+  const sorted = staff.slice().sort((a, b) => {
+    const aCount = Number(a.openTradeInCount || 0);
+    const bCount = Number(b.openTradeInCount || 0);
+    if (aCount !== bCount) return aCount - bCount;
+    const aTime = a.lastAssignedTradeInAt ? new Date(a.lastAssignedTradeInAt).getTime() : 0;
+    const bTime = b.lastAssignedTradeInAt ? new Date(b.lastAssignedTradeInAt).getTime() : 0;
+    return aTime - bTime;
+  });
+  return sorted[0];
+}
+
+async function incrementOpenTradeInCount(staffId) {
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('id') === staffId);
+  if (!row) return;
+  const current = Number(row.get('openTradeInCount') || 0);
+  row.set('openTradeInCount', current + 1);
+  row.set('lastAssignedTradeInAt', new Date().toISOString());
   await row.save();
 }
 
@@ -271,6 +297,8 @@ module.exports = {
   getStaffForBranch,
   pickNextInQueue,
   incrementOpenLeadsCount,
+  pickNextInTradeInQueue,
+  incrementOpenTradeInCount,
   getFaqList,
   getModelList,
   appendLead,
