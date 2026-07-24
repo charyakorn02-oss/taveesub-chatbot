@@ -36,7 +36,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
-    return analysis.reply_text_to_customer || "รบกวนสอบถามเพิ่มเติมนิดนึงนะครับ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนครับ";
+    return analysis.reply_text_to_customer || "ขอบคุณที่ทักมานะครับ แอดมินขอสอบถามเพิ่มเติมนิดนึงนะครับ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนครับ";
   }
 
   session.fallbackCount = 0;
@@ -51,7 +51,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
   if (intent === "service") {
     return handleServiceHandoff({ collected, platform, userId, customerName, replyContext });
   }
-  return "เดี๋ยวให้ทีมงานติดต่อกลับไปนะครับ ขอบคุณที่ทักมาครับ 🙏";
+  return "แอดมินรับเรื่องไว้แล้วนะครับ เดี๋ยวให้ทีมงานติดต่อกลับไปนะครับ ขอบคุณที่ทักมาคุยกับแอดมินนะครับ 🙏";
 }
 
 async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent }) {
@@ -89,7 +89,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   }
 
   if (!assignedStaff || !assignedBranch) {
-    return "ขอโทษครับ ตอนนี้ทีมขายเต็มคิวชั่วคราว เดี๋ยวทีมงานติดต่อกลับไปโดยเร็วที่สุดนะครับ 🙏";
+    return "ขอโทษด้วยนะครับ ตอนนี้คิวเซลเต็มชั่วคราว แอดมินจะรีบให้ทีมงานติดต่อกลับไปโดยเร็วที่สุดเลยครับ 🙏";
   }
 
   if (intent === "trade_in") {
@@ -155,7 +155,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} สาขา${assignedBranch.name}เลยครับ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะครับ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
       : "";
 
-  return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${tradeInPriceNote}${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
+  return `เรียบร้อยครับ! แอดมินส่งข้อมูลของพี่ให้ทีมงานเรียบร้อยแล้วนะครับ 😊 ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปเร็วๆ นี้ครับ${tradeInPriceNote}${addLineNote}\n\nขอบคุณมากๆ นะครับที่ไว้วางใจทวีทรัพย์ยานยนต์ครับ 🙏`;
 }
 
 // หาสาขาให้ลูกค้า -> ใช้ตอน (1) ระบุชื่อเซล/ขอคุยกับพนักงาน แต่ระบบไม่รู้จักตัวตน หรือ (2) ลูกค้าเทิร์นรถที่บอกตรงๆ
@@ -208,7 +208,7 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
       return { branch: matched };
     }
     const names = candidates.map((b) => b.name).join(" หรือ ");
-    return { clarifyingReply: `รบกวนบอกอีกครั้งนะครับ สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ 🙏` };
+    return { clarifyingReply: `รบกวนบอกแอดมินอีกครั้งนะครับ สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ 🙏` };
   }
 
   const geo = collected.location_text ? await geocode(collected.location_text) : null;
@@ -227,7 +227,7 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
       if (top2.length >= 2) {
         session.pendingBranchChoiceIds = top2.map((b) => b.id);
         const names = top2.map((b) => b.name).join(" หรือ ");
-        return { clarifyingReply: `ใกล้พี่สุดมี 2 สาขาครับ คือ ${names} สะดวกไปสาขาไหนดีครับ 😊` };
+        return { clarifyingReply: `แอดมินเช็คให้แล้วครับ ใกล้พี่สุดมี 2 สาขาเลยคือ ${names} สะดวกไปสาขาไหนดีครับ 😊` };
       }
       if (top2.length === 1) return { branch: top2[0] };
     }
@@ -256,7 +256,7 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     assignedBranch = branches[0] || null;
   }
   if (!assignedBranch) {
-    return "ขอโทษครับ ตอนนี้ยังหาสาขาที่รับนัดซ่อมให้ไม่ได้ เดี๋ยวทีมงานติดต่อกลับไปนะครับ 🙏";
+    return "ขอโทษด้วยนะครับ ตอนนี้แอดมินหาสาขาที่รับนัดซ่อมให้ไม่ได้ชั่วคราว เดี๋ยวทีมงานจะติดต่อกลับไปโดยเร็วที่สุดเลยครับ 🙏";
   }
 
   const dateStr = normalizeDate(collected.preferred_date || "");
@@ -284,7 +284,7 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
 
   await notifyPartsDirect(assignedBranch, notifyText);
 
-  return `รับทราบครับ นัดซ่อมสาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อยืนยันคิวอีกครั้งนะครับ 🙏`;
+  return `แอดมินรับข้อมูลนัดซ่อมเรียบร้อยแล้วนะครับ 😊 สาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้ครับ ขอบคุณที่ไว้วางใจนะครับ 🙏`;
 }
 
 function normalizeDate(text) {
