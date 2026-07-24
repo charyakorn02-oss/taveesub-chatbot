@@ -13,27 +13,27 @@
 ```
 taveesub-chatbot/
 ├── src/
-│   ├── server.js              จุดเริ่มต้นของแอป (Express server)
-│   ├── config/systemPrompt.js คำสั่ง/กฎที่ส่งให้ Claude ทุกครั้ง
-│   ├── data/                  ฐานข้อมูล local (JSON) — แก้ไขตรงนี้ได้เลยไม่ต้องรีสตาร์ทเซิร์ฟเวอร์
-│   │   ├── branches.json      รายชื่อสาขา + พิกัด + คิวซ่อมสูงสุด/วัน + LINE Group ID
-│   │   ├── staff.json         พนักงานขาย/ช่าง + เบอร์โทร + สาขา
-│   │   ├── faq.json           คำถาม-คำตอบที่พบบ่อย
-│   │   ├── models.json        รายชื่อรุ่นรถที่ขาย
-│   │   ├── leads.json         log ของทุก Lead ที่เกิดขึ้น (auto-generate)
-│   │   └── bookings.json      log การจองคิวซ่อม (auto-generate)
-│   ├── services/
-│   │   ├── claude.js          เรียก Claude API
-│   │   ├── facebook.js        เรียก Facebook Graph API
-│   │   ├── line.js            เรียก LINE Messaging API
-│   │   ├── geocode.js         Google Maps Geocoding + คำนวณระยะทาง
-│   │   ├── bitrix24.js        เชื่อม Bitrix24 (ไม่บังคับ)
-│   │   └── store.js           อ่าน/เขียนไฟล์ใน data/
-│   ├── routing/router.js      หัวใจของ business logic (ตัดสินใจ handoff/routing ทั้งหมด)
-│   ├── session/sessionStore.js เก็บสถานะการคุยของลูกค้าแต่ละคน (in-memory)
-│   └── webhooks/               รับ event จาก Facebook/LINE
-├── test_router.js             สคริปต์ทดสอบ routing logic แบบไม่ต้องมี API จริง
-├── .env.example                แม่แบบไฟล์ตั้งค่า (คัดลอกเป็น .env แล้วกรอกค่าจริง)
+│ ├── server.js จุดเริ่มต้นของแอป (Express server)
+│ ├── config/systemPrompt.js คำสั่ง/กฎที่ส่งให้ Claude ทุกครั้ง
+│ ├── data/ ฐานข้อมูล local (JSON) — แก้ไขตรงนี้ได้เลยไม่ต้องรีสตาร์ทเซิร์ฟเวอร์
+│ │ ├── branches.json รายชื่อสาขา + พิกัด + คิวซ่อมสูงสุด/วัน + LINE Group ID
+│ │ ├── staff.json พนักงานขาย/ช่าง + เบอร์โทร + สาขา
+│ │ ├── faq.json คำถาม-คำตอบที่พบบ่อย
+│ │ ├── models.json รายชื่อรุ่นรถที่ขาย
+│ │ ├── leads.json log ของทุก Lead ที่เกิดขึ้น (auto-generate)
+│ │ └── bookings.json log การจองคิวซ่อม (auto-generate)
+│ ├── services/
+│ │ ├── claude.js เรียก Claude API
+│ │ ├── facebook.js เรียก Facebook Graph API
+│ │ ├── line.js เรียก LINE Messaging API
+│ │ ├── geocode.js Google Maps Geocoding + คำนวณระยะทาง
+│ │ ├── bitrix24.js เชื่อม Bitrix24 (ไม่บังคับ)
+│ │ └── store.js อ่าน/เขียนไฟล์ใน data/
+│ ├── routing/router.js หัวใจของ business logic (ตัดสินใจ handoff/routing ทั้งหมด)
+│ ├── session/sessionStore.js เก็บสถานะการคุยของลูกค้าแต่ละคน (in-memory)
+│ └── webhooks/ รับ event จาก Facebook/LINE
+├── test_router.js สคริปต์ทดสอบ routing logic แบบไม่ต้องมี API จริง
+├── .env.example แม่แบบไฟล์ตั้งค่า (คัดลอกเป็น .env แล้วกรอกค่าจริง)
 └── package.json
 ```
 
@@ -80,7 +80,7 @@ node test_router.js
 เปิดไฟล์ในโฟลเดอร์ `src/data/` แล้วแก้ตรงๆ ได้เลย (เป็นไฟล์ข้อความธรรมดา เปิดด้วย Notepad/VS Code ก็ได้)
 
 - **`branches.json`** — ใส่ชื่อ ที่อยู่ พิกัด (lat/long) จำนวนคิวซ่อมสูงสุด/วัน และ LINE Group ID ของแต่ละสาขาให้ครบ
-  (หาพิกัด: เปิด Google Maps คลิกขวาที่ตำแหน่งสาขา จะมีตัวเลข lat, long ให้กดคัดลอก)
+(หาพิกัด: เปิด Google Maps คลิกขวาที่ตำแหน่งสาขา จะมีตัวเลข lat, long ให้กดคัดลอก)
 - **`staff.json`** — ใส่ชื่อ เบอร์โทร สาขา และตำแหน่ง (เซล/ช่าง) ของพนักงานทุกคน
 - **`faq.json`** — เพิ่ม/แก้คำถามที่ลูกค้าถามบ่อยพร้อมคำตอบ
 - **`models.json`** — ใส่รุ่นรถที่ขายทั้งหมด
@@ -103,7 +103,7 @@ node test_router.js
 - Webhook URL: `https://your-app.onrender.com/webhook/line`
 - เปิด "Use webhook"
 - เพิ่มบอทเข้ากลุ่ม LINE ของแต่ละสาขา แล้วเอา Group ID มาใส่ใน `branches.json`
-  (วิธีหา Group ID ง่ายที่สุด: log `event.source.groupId` ชั่วคราวตอนบอทเข้ากลุ่มครั้งแรก หรือใช้ LINE Official Account Manager)
+(วิธีหา Group ID ง่ายที่สุด: log `event.source.groupId` ชั่วคราวตอนบอทเข้ากลุ่มครั้งแรก หรือใช้ LINE Official Account Manager)
 
 ---
 
@@ -141,7 +141,7 @@ node test_router.js
 - เซิร์ฟเวอร์บูตสำเร็จ ตอบ `/health` และ `/` ได้ปกติ
 - Facebook Webhook verification (`GET /webhook/facebook`) ตอบ challenge ถูกต้อง และปฏิเสธ token ผิดด้วย 403
 - รัน `test_router.js` แล้ว routing logic ทำงานถูกต้องครบทุกเคส: ส่งตรงถึงเซลประจำตัว, ส่งเข้าคิว round robin,
-  เคสซ่อมไม่ส่งเบอร์พนักงานให้ลูกค้า, และ high-intent keyword ("จอง") ทำให้ handoff ทันทีแม้ข้อมูลไม่ครบ
+เคสซ่อมไม่ส่งเบอร์พนักงานให้ลูกค้า, และ high-intent keyword ("จอง") ทำให้ handoff ทันทีแม้ข้อมูลไม่ครบ
 
 สิ่งที่ยัง**ทดสอบกับของจริงไม่ได้**เพราะไม่มี API key จริง (ต้องให้คุณทดสอบเองหลังกรอก `.env` ครบ):
 Facebook Messenger จริง, LINE OA จริง, Claude API จริง, Google Maps จริง, Bitrix24 จริง
@@ -153,7 +153,6 @@ Facebook Messenger จริง, LINE OA จริง, Claude API จริง, 
 - **Session เก็บใน memory** — ถ้าเซิร์ฟเวอร์ restart บทสนทนาที่ค้างอยู่จะหายและเริ่มใหม่ (ไม่กระทบ Lead ที่บันทึกไปแล้ว) เหมาะกับเริ่มต้นทดสอบ ถ้าจะใช้จริงระยะยาวควรเปลี่ยนไปใช้ Redis
 - **การแปลงวันที่ (`preferred_date`)** ตอนนี้รองรับเฉพาะรูปแบบ `YYYY-MM-DD` เท่านั้น ถ้าลูกค้าพิมพ์ "พรุ่งนี้"/"เสาร์นี้" ระบบจะยังไม่ auto-parse ให้ — ระบบจะทำการนัดคิวโดยไม่เช็คความจุถ้าแปลงวันที่ไม่ได้ (ควรให้ Claude แปลงเป็น ISO date ก่อนส่งมา หรือเพิ่ม library แปลงวันที่ภาษาไทยภายหลัง)
 - **การนับระยะทาง** ใช้เส้นตรง (Haversine) ไม่ใช่ระยะทางถนนจริง เพียงพอสำหรับจัดอันดับสาขาใกล้สุด แต่ตัวเลข กม. ที่โชว์อาจคลาดเคลื่อนจากระยะทางขับจริงเล็กน้อย
-
 
 ---
 
@@ -175,7 +174,6 @@ Facebook Messenger จริง, LINE OA จริง, Claude API จริง, 
 **ห้ามแก้:** ชื่อคอลัมน์ในแถวแรกของแต่ละแท็บ (id, name, branchId ฯลฯ) เพราะโค้ดอ้างอิงชื่อคอลัมน์เหล่านี้ตรงๆ ถ้าเผลอเปลี่ยนชื่อคอลัมน์ บอทจะอ่านข้อมูลไม่ได้
 
 **การเชื่อมต่อเบื้องหลัง (ทางเทคนิค ไม่ต้องยุ่ง):** ใช้ Google Cloud Service Account (`chatbot-sheets@meta-router-503306-e4.iam.gserviceaccount.com`) ซึ่งมีสิทธิ์แก้ไขสเปรดชีตนี้โดยเฉพาะ ค่าที่ต้องตั้งใน Render Environment Variables คือ `GOOGLE_SHEETS_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (ตั้งไว้แล้วในระบบที่ deploy อยู่จริง)
-
 
 ---
 
@@ -202,3 +200,20 @@ Facebook Messenger จริง, LINE OA จริง, Claude API จริง, 
 - แท็บ Staff: `lineUserId`, `lineAddUrl`
 - แท็บ Branches: `supervisorLineUserId`
 - แท็บ Leads: `leadId`, `notifiedAt`, `acknowledgedAt`, `responseTimeMin`, `customerName`, `escalatedAt`
+
+---
+
+## 12. นัดคิวซ่อม -> ส่งรายละเอียดตรงหาทีมอะไหล่ประจำสาขา (อัปเดตล่าสุด)
+
+เมื่อลูกค้าพิมพ์รุ่นรถ/อาการที่จะซ่อมเข้ามา ระบบจะไม่แจ้งเตือนเข้ากลุ่มไลน์สาขาอีกต่อไป (เฉพาะ flow นัดซ่อม) แต่จะส่งรายละเอียดรถ/อาการ **ตรงถึงทีมอะไหล่ประจำสาขานั้น** ทางไลน์ส่วนตัว เพื่อให้ทีมอะไหล่เตรียมเช็กสต๊อกอะไหล่ล่วงหน้าได้ทันที
+
+**ขั้นตอนที่ทีมอะไหล่แต่ละสาขาต้องทำครั้งเดียว (ก่อนใช้งานจริง):**
+
+ทีมอะไหล่แอดไลน์ OA ของร้าน แล้วพิมพ์ `ลงทะเบียนอะไหล่ <รหัสสาขา>` เช่น `ลงทะเบียนอะไหล่ branch1` (รหัสสาขาดูได้จากคอลัมน์ `id` ในแท็บ Branches)
+
+ทำครั้งเดียวเท่านั้น ระบบจะบันทึก LINE userId ลงคอลัมน์ `partsLineUserId` ในแท็บ Branches ให้อัตโนมัติ ถ้าสาขาไหนยังไม่ได้ลงทะเบียน ระบบจะ fallback ไปแจ้งเตือนกลุ่มไลน์สาขาแทน (กันไม่ให้ข้อมูลนัดซ่อมหลุดหาย) พร้อมข้อความเตือนว่ายังไม่ได้ลงทะเบียน
+
+**คอลัมน์ใหม่ที่เพิ่มในชีต (ห้ามลบ/เปลี่ยนชื่อ):**
+- แท็บ Branches: `partsLineUserId`
+
+**หมายเหตุ:** ตอนนี้ยังไม่ได้ทำระบบปฏิทินจองคิว (calendar) แยกต่างหาก — เก็บไว้เป็นเฟสถัดไป ปัจจุบันลูกค้าพิมพ์รายละเอียดรถ/อาการเข้ามาเป็นข้อความ แล้วระบบส่งต่อให้ทีมอะไหล่ตามที่อธิบายไว้ด้านบน
