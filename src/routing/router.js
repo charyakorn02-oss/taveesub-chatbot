@@ -78,30 +78,25 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     }
     assignedBranch = resolved.branch;
   } else {
-    // trade_in: ต้องมาสาขาเสมอ ไม่มีตัวเลือกจัดส่ง ใช้สาขาใกล้สุดแบบเดิม
-    const branches = await store.getActiveBranches();
-    const geo = collected.location_text ? await geocode(collected.location_text) : null;
-    if (geo && isServiceArea(geo.province)) {
-      const ranked = branches
-        .filter((b) => b.lat && b.long)
-        .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
-        .sort((a, b) => a.distanceKm - b.distanceKm);
-      assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
-    }
-    if (!assignedBranch) {
-      assignedBranch = branches[0] || null;
-    }
+    // trade_in: ต้องมาสาขาเสมอ -> แค่ถามตรงๆ ว่าสะดวกนำรถเข้าสาขาไหน แล้ว match ชื่อสาขาจากคำตอบลูกค้า
+    assignedBranch = await resolveBranchDirect(collected);
   }
 
   if (!assignedStaff && assignedBranch) {
-    assignedStaff = await store.pickNextInQueue(assignedBranch.id);
+    // เทิร์นรถรันคิวแยกจากคิวขายรถใหม่ ไม่ใช้ตัวนับร่วมกัน
+    assignedStaff =
+      intent === "trade_in" ? await store.pickNextInTradeInQueue(assignedBranch.id) : await store.pickNextInQueue(assignedBranch.id);
   }
 
   if (!assignedStaff || !assignedBranch) {
     return "ขอโทษครับ ตอนนี้ทีมขายเต็มคิวชั่วคราว เดี๋ยวทีมงานติดต่อกลับไปโดยเร็วที่สุดนะครับ 🙏";
   }
 
-  await store.incrementOpenLeadsCount(assignedStaff.id);
+  if (intent === "trade_in") {
+    await store.incrementOpenTradeInCount(assignedStaff.id);
+  } else {
+    await store.incrementOpenLeadsCount(assignedStaff.id);
+  }
 
   const lead = {
     platform,
@@ -127,10 +122,13 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   const badge = routingMethod === "requested" ? `🌟 ลูกค้าประจำของ ${assignedStaff.name}\n` : "";
   const deliveryNote = collected.delivery_preference ? `วิธีรับรถ: ${collected.delivery_preference}\n` : "";
   const customerNameNote = customerName ? `ชื่อลูกค้า (${platform}): ${customerName}\n` : "";
+  const tradeInNote =
+    intent === "trade_in" ? "⚠️ เทิร์นรถ: แจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้น ห้ามฟันธงราคาสุดท้ายทางแชท\n" : "";
   const notifyText =
     badge +
     "🔔 Lead ใหม่ (" + platform + ")\n" +
     customerNameNote +
+    tradeInNote +
     "สาขา: " + assignedBranch.name + "\n" +
     "รุ่นที่สนใจ: " + (collected.model_or_issue || "-") + "\n" +
     deliveryNote +
@@ -149,11 +147,14 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   const addLineNote = assignedStaff.lineAddUrl
     ? `\nแอดไลน์ ${assignedStaff.name} คุยต่อได้เลยครับ: ${assignedStaff.lineAddUrl}`
     : "";
+  const tradeInPriceNote =
+    intent === "trade_in" ? ` เดี๋ยว ${assignedStaff.name} จะช่วยประเมินราคาเบื้องต้นให้ครับ (ราคาจริงต้องดูรถที่สาขาอีกทีนะครับ)` : "";
 
-  return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
+  return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${tradeInPriceNote}${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
 }
 
-// หาสาขาให้ลูกค้าที่ระบุชื่อเซล/ขอคุยกับพนักงาน แต่ระบบไม่รู้จักตัวตน -> ส่งไปสาขาที่ลูกค้าน่าจะหมายถึงทันที ไม่ถามซ้ำ
+// หาสาขาให้ลูกค้า -> ใช้ตอน (1) ระบุชื่อเซล/ขอคุยกับพนักงาน แต่ระบบไม่รู้จักตัวตน หรือ (2) ลูกค้าเทิร์นรถที่บอกตรงๆ
+// ว่าสะดวกนำรถเข้าสาขาไหน -> match ชื่อสาขาจากข้อความลูกค้าก่อน ถ้าไม่เจอค่อย fallback ไปหาสาขาใกล้สุดจากพิกัด
 async function resolveBranchDirect(collected) {
   const branches = await store.getActiveBranches();
   const hintText = `${collected.location_text || ""} ${collected.requested_staff_name || ""}`.trim();
@@ -233,7 +234,7 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
 }
 
 // นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วส่งรายละเอียดตรงไปหา
-// ไลน์ทีมอะไหล่ประจำสาขานั้น (ถ้าทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์ จะ fallback ไปแจ้งกลุ่มสาขาแทน)
+// ไลน์ทีมอะไหล่ประจำสาขานั้นทันที (ไม่เช็คว่าคิวช่างเต็มไหม ให้ทีมอะไหล่/ช่างไปจัดคิวเองอีกที)
 async function handleServiceHandoff({ collected, platform, userId, customerName, replyContext }) {
   const branches = await store.getActiveBranches();
   let assignedBranch = null;
@@ -254,10 +255,6 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
   }
 
   const dateStr = normalizeDate(collected.preferred_date || "");
-  const existing = await store.getBookingsForBranchDate(assignedBranch.id, dateStr);
-  if (assignedBranch.maxServiceSlotsPerDay && existing.length >= Number(assignedBranch.maxServiceSlotsPerDay)) {
-    return `ขอโทษครับ คิวช่างที่สาขา${assignedBranch.name}วันที่เลือกเต็มแล้ว รบกวนเลือกวันอื่น หรือให้ทีมงานติดต่อกลับไปช่วยจัดคิวนะครับ`;
-  }
 
   const booking = {
     platform,
