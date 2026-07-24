@@ -14,11 +14,6 @@ function containsHighIntentKeyword(text) {
   return HIGH_INTENT_KEYWORDS.some((k) => text.includes(k));
 }
 
-/**
- * จัดการ turn การคุยหนึ่งรอบ: เรียก Claude มาแล้ว (analysis), ตัดสินใจว่า handoff หรือคุยต่อ
- * คืนค่าข้อความสุดท้ายที่จะส่งกลับลูกค้า
- * customerName: ชื่อโปรไฟล์ลูกค้าจากแพลตฟอร์มนั้นๆ (LINE display name / Facebook ชื่อ-นามสกุล) เอาไว้บันทึกลง Lead
- */
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   const collected = session.collected;
   const fieldsToMerge = [
@@ -27,6 +22,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     "delivery_preference",
     "location_text",
     "requested_staff_name",
+    "preferred_date",
     "phone",
   ];
   fieldsToMerge.forEach((f) => {
@@ -36,21 +32,21 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   });
 
   const highIntent = containsHighIntentKeyword(rawMessage);
-  const shouldHandoff = Boolean(analysis.ready_to_handoff) || highIntent || session.fallbackCount >= FALLBACK_LIMIT;
+  const shouldHandoff = Boolean(analysis.data_complete) || highIntent || session.fallbackCount >= FALLBACK_LIMIT;
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
-    return analysis.reply_to_customer || "รบกวนสอบถามเพิ่มเติมนิดนึงนะครับ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนครับ";
+    return analysis.reply_text_to_customer || "รบกวนสอบถามเพิ่มเติมนิดนึงนะครับ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนครับ";
   }
 
   session.fallbackCount = 0;
-  return performHandoff({ collected, platform, userId, customerName, replyContext, highIntent });
+  return performHandoff({ collected, session, rawMessage, platform, userId, customerName, replyContext, highIntent });
 }
 
-async function performHandoff({ collected, platform, userId, customerName, replyContext, highIntent }) {
+async function performHandoff({ collected, session, rawMessage, platform, userId, customerName, replyContext, highIntent }) {
   const intent = collected.intent_category || "general";
   if (intent === "buying_new" || intent === "trade_in") {
-    return handleSalesHandoff({ collected, intent, platform, userId, customerName, replyContext, highIntent });
+    return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent });
   }
   if (intent === "service") {
     return handleServiceHandoff({ collected, platform, userId, customerName, replyContext });
@@ -58,24 +54,33 @@ async function performHandoff({ collected, platform, userId, customerName, reply
   return "เดี๋ยวให้ทีมงานติดต่อกลับไปนะครับ ขอบคุณที่ทักมาครับ 🙏";
 }
 
-async function handleSalesHandoff({ collected, intent, platform, userId, customerName, replyContext, highIntent }) {
+async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent }) {
   let assignedStaff = null;
   let assignedBranch = null;
   let routingMethod = "round_robin";
 
+  // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ถ้าเจอในระบบจริง ส่งให้คนนั้นเลย ไม่ต้องหมุนคิว
   if (collected.requested_staff_name) {
     const staff = await store.findStaffByNameFuzzy(collected.requested_staff_name);
     if (staff) {
       assignedStaff = staff;
       assignedBranch = await store.getBranchById(staff.branchId);
       routingMethod = "requested";
+    } else {
+      // ระบุชื่อมาแต่ไม่รู้จัก หรือขอคุยกับพนักงาน/เซลเฉยๆ -> ส่งไปสาขาที่ลูกค้าน่าจะหมายถึงทันที ไม่ถามซ้ำ
+      assignedBranch = await resolveBranchDirect(collected);
+      routingMethod = "requested_unmatched";
     }
-  }
-
-  if (!assignedStaff) {
+  } else if (intent === "buying_new") {
+    const resolved = await resolveAssignedBranchForBuyingNew({ collected, session, rawMessage });
+    if (resolved.clarifyingReply) {
+      return resolved.clarifyingReply;
+    }
+    assignedBranch = resolved.branch;
+  } else {
+    // trade_in: ต้องมาสาขาเสมอ ไม่มีตัวเลือกจัดส่ง ใช้สาขาใกล้สุดแบบเดิม
     const branches = await store.getActiveBranches();
     const geo = collected.location_text ? await geocode(collected.location_text) : null;
-
     if (geo && isServiceArea(geo.province)) {
       const ranked = branches
         .filter((b) => b.lat && b.long)
@@ -83,14 +88,13 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
         .sort((a, b) => a.distanceKm - b.distanceKm);
       assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
     }
-
     if (!assignedBranch) {
       assignedBranch = branches[0] || null;
     }
+  }
 
-    if (assignedBranch) {
-      assignedStaff = await store.pickNextInQueue(assignedBranch.id);
-    }
+  if (!assignedStaff && assignedBranch) {
+    assignedStaff = await store.pickNextInQueue(assignedBranch.id);
   }
 
   if (!assignedStaff || !assignedBranch) {
@@ -136,12 +140,96 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
 
   await notifyStaffDirect(assignedStaff, notifyText, leadId);
 
-  const deliveryLine = collected.delivery_preference ? `เรื่อง${collected.delivery_preference}` : "";
+  const deliveryLine =
+    collected.delivery_preference === "home_delivery"
+      ? "เรื่องจัดส่งถึงบ้าน "
+      : collected.delivery_preference === "pickup_at_branch"
+      ? "เรื่องรับรถที่สาขา "
+      : "";
   const addLineNote = assignedStaff.lineAddUrl
     ? `\nแอดไลน์ ${assignedStaff.name} คุยต่อได้เลยครับ: ${assignedStaff.lineAddUrl}`
     : "";
 
   return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
+}
+
+// หาสาขาให้ลูกค้าที่ระบุชื่อเซล/ขอคุยกับพนักงาน แต่ระบบไม่รู้จักตัวตน -> ส่งไปสาขาที่ลูกค้าน่าจะหมายถึงทันที ไม่ถามซ้ำ
+async function resolveBranchDirect(collected) {
+  const branches = await store.getActiveBranches();
+  const hintText = `${collected.location_text || ""} ${collected.requested_staff_name || ""}`.trim();
+
+  if (hintText) {
+    const matchedByName = branches.find((b) => {
+      if (!b.name) return false;
+      const shortName = b.name.replace(/^สาขา/, "").trim();
+      return hintText.includes(b.name) || (shortName && hintText.includes(shortName));
+    });
+    if (matchedByName) return matchedByName;
+  }
+
+  const geo = collected.location_text ? await geocode(collected.location_text) : null;
+  if (geo) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    if (ranked.length > 0) return ranked[0].branch;
+  }
+
+  return branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+}
+
+// หาสาขาให้ลูกค้าที่สนใจซื้อรถใหม่ (ไม่ได้ระบุชื่อเซล) ตามเงื่อนไข:
+// - อยู่ กทม./ปทุมธานี + จัดส่ง -> สาขาใกล้สุด (ส่งฟรีไม่เกิน 25 กม.)
+// - อยู่ กทม./ปทุมธานี + มารับหน้าร้าน -> แนะนำ 2 สาขาใกล้สุดให้เลือก แล้วรอลูกค้าตอบ
+// - อยู่นอก กทม./ปทุมธานี (หรือหาพิกัดไม่ได้) -> ส่งสำนักงานใหญ่ (สนญ) รันคิวทันที ไม่ถามต่อ
+async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessage }) {
+  const branches = await store.getActiveBranches();
+
+  // รอบก่อนเคยแนะนำ 2 สาขาให้เลือกไว้ -> รอบนี้เช็คว่าลูกค้าเลือกสาขาไหน
+  if (session.pendingBranchChoiceIds && session.pendingBranchChoiceIds.length > 0) {
+    const candidates = session.pendingBranchChoiceIds
+      .map((id) => branches.find((b) => b.id === id))
+      .filter(Boolean);
+    const text = rawMessage || "";
+    const matched = candidates.find((b) => {
+      if (!b.name) return false;
+      const shortName = b.name.replace(/^สาขา/, "").trim();
+      return text.includes(b.name) || (shortName && text.includes(shortName));
+    });
+    if (matched) {
+      session.pendingBranchChoiceIds = null;
+      return { branch: matched };
+    }
+    const names = candidates.map((b) => b.name).join(" หรือ ");
+    return { clarifyingReply: `รบกวนบอกอีกครั้งนะครับ สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ 🙏` };
+  }
+
+  const geo = collected.location_text ? await geocode(collected.location_text) : null;
+
+  if (geo && isServiceArea(geo.province)) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    if (collected.delivery_preference === "home_delivery") {
+      if (ranked.length > 0) return { branch: ranked[0].branch };
+    } else {
+      // pickup_at_branch หรือยังไม่ระบุความต้องการจัดส่ง -> ให้เลือกจาก 2 สาขาใกล้สุด
+      const top2 = ranked.slice(0, 2).map((r) => r.branch);
+      if (top2.length >= 2) {
+        session.pendingBranchChoiceIds = top2.map((b) => b.id);
+        const names = top2.map((b) => b.name).join(" หรือ ");
+        return { clarifyingReply: `ใกล้พี่สุดมี 2 สาขาครับ คือ ${names} สะดวกไปสาขาไหนดีครับ 😊` };
+      }
+      if (top2.length === 1) return { branch: top2[0] };
+    }
+  }
+
+  // นอกพื้นที่ กทม./ปทุมธานี หรือหาพิกัดไม่ได้ -> ส่งสำนักงานใหญ่ (สนญ) รันคิวทันที
+  const hq = branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+  return { branch: hq };
 }
 
 // นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วส่งรายละเอียดตรงไปหา
@@ -165,7 +253,7 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     return "ขอโทษครับ ตอนนี้ยังหาสาขาที่รับนัดซ่อมให้ไม่ได้ เดี๋ยวทีมงานติดต่อกลับไปนะครับ 🙏";
   }
 
-  const dateStr = normalizeDate(rawMessageDateHint(collected));
+  const dateStr = normalizeDate(collected.preferred_date || "");
   const existing = await store.getBookingsForBranchDate(assignedBranch.id, dateStr);
   if (assignedBranch.maxServiceSlotsPerDay && existing.length >= Number(assignedBranch.maxServiceSlotsPerDay)) {
     return `ขอโทษครับ คิวช่างที่สาขา${assignedBranch.name}วันที่เลือกเต็มแล้ว รบกวนเลือกวันอื่น หรือให้ทีมงานติดต่อกลับไปช่วยจัดคิวนะครับ`;
@@ -195,10 +283,6 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
   await notifyPartsDirect(assignedBranch, notifyText);
 
   return `รับทราบครับ นัดซ่อมสาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อยืนยันคิวอีกครั้งนะครับ 🙏`;
-}
-
-function rawMessageDateHint(collected) {
-  return collected.model_or_issue || "";
 }
 
 function normalizeDate(text) {
