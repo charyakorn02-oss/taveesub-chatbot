@@ -123,7 +123,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   const deliveryNote = collected.delivery_preference ? `วิธีรับรถ: ${collected.delivery_preference}\n` : "";
   const customerNameNote = customerName ? `ชื่อลูกค้า (${platform}): ${customerName}\n` : "";
   const tradeInNote =
-    intent === "trade_in" ? "⚠️ เทิร์นรถ: แจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้น ห้ามฟันธงราคาสุดท้ายทางแชท\n" : "";
+    intent === "trade_in" ? "⚠️ เทิร์นรถ: แจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้น ห้ามฟันธงราคาสุดท้ายทางแชท ลูกค้าอาจส่งภาพรถคันเดิมมาให้ดูประกอบการประเมิน\n" : "";
   const notifyText =
     badge +
     "🔔 Lead ใหม่ (" + platform + ")\n" +
@@ -147,8 +147,13 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   const addLineNote = assignedStaff.lineAddUrl
     ? `\nแอดไลน์ ${assignedStaff.name} คุยต่อได้เลยครับ: ${assignedStaff.lineAddUrl}`
     : "";
+
+  // เทิร์นรถ: ชวนลูกค้าส่งภาพรถคันเดิมให้เซลประจำสาขาดูเพื่อประเมินราคาเบื้องต้น
+  // ย้ำเสมอว่าเป็นแค่ราคาประเมินเบื้องต้น ไม่ใช่ราคาสุดท้าย ต้องนำรถเข้ามาตรวจที่สาขาอีกครั้ง
   const tradeInPriceNote =
-    intent === "trade_in" ? ` เดี๋ยว ${assignedStaff.name} จะช่วยประเมินราคาเบื้องต้นให้ครับ (ราคาจริงต้องดูรถที่สาขาอีกทีนะครับ)` : "";
+    intent === "trade_in"
+      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} สาขา${assignedBranch.name}เลยครับ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะครับ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
+      : "";
 
   return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${tradeInPriceNote}${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
 }
