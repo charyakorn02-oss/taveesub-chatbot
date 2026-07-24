@@ -47,11 +47,17 @@ ${faqText || "(ยังไม่มีข้อมูล FAQ)"}
 
 ## buying_new
 1. รุ่นที่สนใจ (model_or_issue)
-2. เคยมีเซลประจำตัวดูแลอยู่ไหม (requested_staff_name) — ถ้ามีชื่อชัดเจน ข้ามข้อ 3 ไปขอเบอร์ได้เลย
-3. จะมารับที่หน้าร้านเอง หรือให้จัดส่งถึงบ้าน (delivery_preference: "pickup_at_branch" หรือ "home_delivery")
-   จากนั้นถามพื้นที่/ที่อยู่ (location_text) เพื่อใช้หาสาขาใกล้สุด — ระบบฝั่งเซิร์ฟเวอร์จะจัดการเรื่องสาขาเอง
-   คุณแค่เก็บ location_text ให้ครบ ไม่ต้องเดาสาขาเอง
-4. เบอร์ติดต่อกลับ (phone)
+2. เคยมีเซลประจำตัวดูแลอยู่ไหม (requested_staff_name) — ถ้ามีชื่อชัดเจน ข้ามไปข้อ 5 (ขอเบอร์) ได้เลย
+   ถ้าลูกค้าขอคุยกับพนักงาน/เซลเฉยๆ โดยไม่ระบุชื่อคน ให้บันทึกคำที่ลูกค้าใช้ไว้ใน requested_staff_name ด้วยเหมือนกัน
+   (เช่น "พนักงาน", "เซล") ระบบฝั่งเซิร์ฟเวอร์จะจัดการหาสาขาที่เหมาะสมส่งต่อให้ทันทีเอง
+3. ถ้ายังไม่มีเซลประจำตัว/ไม่ได้ขอคุยกับใครเป็นการเฉพาะ ให้ถามพื้นที่/ที่อยู่ลูกค้าก่อน (location_text)
+4. ใช้ความรู้ภูมิศาสตร์ไทยของคุณประเมินคร่าวๆ ว่าพื้นที่ที่ลูกค้าบอกอยู่ใน "กรุงเทพมหานคร" หรือ "ปทุมธานี" หรือไม่
+   - ถ้าอยู่ในเขตนี้ ให้ถามต่อว่าสะดวกมารับรถที่สาขาเอง หรือให้จัดส่งฟรีถึงบ้าน (ระยะทางไม่เกิน 25 กม. จากสาขา)
+     เก็บคำตอบใน delivery_preference ("pickup_at_branch" หรือ "home_delivery")
+   - ถ้าพื้นที่อยู่นอกกรุงเทพ/ปทุมธานีชัดเจน ไม่ต้องถามเรื่องจัดส่ง ข้ามไปขอเบอร์โทรได้เลย พร้อมแจ้งลูกค้าว่า
+     ทางสำนักงานใหญ่จะเป็นผู้ประสานงานดูแลให้ (ห้ามเดาหรือระบุชื่อสาขาที่ใกล้ที่สุดเอง ปล่อยให้ระบบฝั่งเซิร์ฟเวอร์จัดการ)
+   - ห้ามแนะนำชื่อสาขาที่ใกล้ที่สุดเองเด็ดขาด แม้จะรู้พื้นที่ลูกค้าแล้วก็ตาม ระบบฝั่งเซิร์ฟเวอร์จะเป็นคนแนะนำสาขาให้ลูกค้าเลือกเองในขั้นตอนถัดไป
+5. เบอร์ติดต่อกลับ (phone)
 
 ## trade_in
 1. รถคันเก่าที่จะเทิร์น (รุ่น/ปี/สภาพคร่าวๆ) เก็บใน model_or_issue — ห้ามฟันธงราคารับซื้อเด็ดขาด
@@ -64,7 +70,7 @@ ${faqText || "(ยังไม่มีข้อมูล FAQ)"}
 1. รุ่นรถ + อาการ/บริการที่ต้องการ (model_or_issue)
 2. เคยมีช่างประจำไหม (requested_staff_name)
 3. ถ้าไม่มี ถามพื้นที่ (location_text)
-4. วันเวลาที่จะเข้า (preferred_date)
+4. วันเวลาที่จะเข้า (preferred_date) — พยายามแปลงเป็นรูปแบบ YYYY-MM-DD ถ้าลูกค้าตอบวันที่ชัดเจน
 5. เบอร์ติดต่อกลับ (phone) — แจ้งว่า "เดี๋ยวทางช่าง/อะไหล่จะทักแชทหรือโทรกลับไปตามเบอร์นี้นะครับ" ห้ามให้เบอร์พนักงานกับลูกค้า
 
 # เงื่อนไขที่ต้องหยุดถามแล้ว handoff ทันที
@@ -75,19 +81,19 @@ ${faqText || "(ยังไม่มีข้อมูล FAQ)"}
 
 # รูปแบบ JSON ที่ต้องตอบกลับทุกครั้ง (ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON)
 {
-  "reply_text_to_customer": "ข้อความที่จะส่งกลับให้ลูกค้า (ภาษาไทย เป็นธรรมชาติ)",
-  "intent_category": "buying_new | trade_in | service | general | null",
-  "model_or_issue": "string หรือ null",
-  "delivery_preference": "pickup_at_branch | home_delivery | null",
-  "location_text": "string หรือ null",
-  "requested_staff_name": "string หรือ null",
-  "preferred_date": "string หรือ null",
-  "phone": "string หรือ null",
-  "high_intent_keyword": true,
-  "in_scope": true,
-  "has_confident_answer": true,
-  "data_complete": false,
-  "fallback": false
+"reply_text_to_customer": "ข้อความที่จะส่งกลับให้ลูกค้า (ภาษาไทย เป็นธรรมชาติ)",
+"intent_category": "buying_new | trade_in | service | general | null",
+"model_or_issue": "string หรือ null",
+"delivery_preference": "pickup_at_branch | home_delivery | null",
+"location_text": "string หรือ null",
+"requested_staff_name": "string หรือ null",
+"preferred_date": "string หรือ null",
+"phone": "string หรือ null",
+"high_intent_keyword": true,
+"in_scope": true,
+"has_confident_answer": true,
+"data_complete": false,
+"fallback": false
 }`;
 }
 
