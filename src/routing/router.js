@@ -293,6 +293,8 @@ function normalizeDate(text) {
   return m ? m[0] : "";
 }
 
+// ส่งแจ้งเตือน Lead ตรงถึงไลน์ส่วนตัวเซล ถ้าเซลยังไม่ได้ลงทะเบียนไลน์
+// ให้ fallback ไปแจ้งหัวหน้าสาขา (ผู้จัดการ) แทนทันที ไม่ใช้กลุ่มไลน์อีกต่อไป
 async function notifyStaffDirect(staff, text, leadId) {
   if (staff.lineUserId) {
     try {
@@ -305,11 +307,20 @@ async function notifyStaffDirect(staff, text, leadId) {
     console.warn(`[router] พนักงาน ${staff.name} (${staff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
   }
   const branch = await store.getBranchById(staff.branchId);
-  if (branch) {
-    await safePushLine(branch.lineGroupId, "⚠️ (เซลยังไม่ได้ลงทะเบียนไลน์) " + text);
+  if (branch && branch.supervisorLineUserId) {
+    try {
+      await line.pushMessage(branch.supervisorLineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + text);
+      return;
+    } catch (err) {
+      console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
+    }
+  } else {
+    console.warn(`[router] สาขา ${branch ? branch.name : staff.branchId} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (supervisorLineUserId) ข้อความหลุด:`, text);
   }
 }
 
+// ส่งแจ้งเตือนนัดซ่อมตรงถึงไลน์ส่วนตัวทีมอะไหล่ ถ้าทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์
+// ให้ fallback ไปแจ้งหัวหน้าสาขา (ผู้จัดการ) แทนทันที ไม่ใช้กลุ่มไลน์อีกต่อไป
 async function notifyPartsDirect(branch, text) {
   if (branch.partsLineUserId) {
     try {
@@ -321,19 +332,15 @@ async function notifyPartsDirect(branch, text) {
   } else {
     console.warn(`[router] สาขา ${branch.name} (${branch.id}) ทีมอะไหล่ยังไม่ได้ลงทะเบียน lineUserId`);
   }
-  await safePushLine(branch.lineGroupId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text);
-}
-
-async function safePushLine(groupId, text) {
-  if (!groupId || groupId.includes("ใส่ของจริง")) {
-    console.warn("[router] ยังไม่ได้ตั้งค่า lineGroupId จริง ข้ามการแจ้งเตือน");
-    console.log("[router] ข้อความที่ควรจะส่ง:", text);
-    return;
-  }
-  try {
-    await line.pushMessage(groupId, text);
-  } catch (err) {
-    console.error("[router] safePushLine error:", err.message);
+  if (branch.supervisorLineUserId) {
+    try {
+      await line.pushMessage(branch.supervisorLineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text);
+      return;
+    } catch (err) {
+      console.error("[router] notifyPartsDirect supervisor fallback error:", err.message);
+    }
+  } else {
+    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (supervisorLineUserId) ข้อความหลุด:`, text);
   }
 }
 
