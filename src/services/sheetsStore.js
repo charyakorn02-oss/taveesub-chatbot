@@ -51,7 +51,7 @@ async function getBranchById(id) {
   return branches.find((b) => b.id === id) || null;
 }
 
-// ทุกสาขา ไม่กรอง active (ใช้ตอนลงทะเบียนหัวหน้าสาขา เผื่อสาขายังไม่เปิด active)
+// ทุกสาขา ไม่กรอง active (ใช้ตอนลงทะเบียนหัวหน้าสาขา/อะไหล่ เผื่อสาขายังไม่เปิด active)
 async function getAllBranches() {
   const rows = await getRows('Branches');
   return rows.map(rowToObject);
@@ -63,6 +63,17 @@ async function setBranchSupervisorLineUserId(branchId, lineUserId) {
   const row = rows.find((r) => r.get('id') === branchId);
   if (!row) return false;
   row.set('supervisorLineUserId', lineUserId);
+  await row.save();
+  return true;
+}
+
+// ทีมอะไหล่ประจำสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนอะไหล่ <รหัสสาขา>")
+// ใช้ตอนมีลูกค้าจองคิวซ่อม บอทจะส่งรายละเอียดรถ/อาการไปหาไลน์นี้โดยตรง
+async function setBranchPartsLineUserId(branchId, lineUserId) {
+  const rows = await getRows('Branches');
+  const row = rows.find((r) => r.get('id') === branchId);
+  if (!row) return false;
+  row.set('partsLineUserId', lineUserId);
   await row.save();
   return true;
 }
@@ -252,6 +263,7 @@ module.exports = {
   getBranchById,
   getAllBranches,
   setBranchSupervisorLineUserId,
+  setBranchPartsLineUserId,
   getActiveStaff,
   findStaffByNameFuzzy,
   findStaffById,
