@@ -18,6 +18,10 @@ const REGISTER_KEYWORD = "ลงทะเบียน";
 // เพื่อผูก LINE userId ของหัวหน้าเข้ากับสาขา ใช้ตอน escalate lead ที่เซลตอบช้า
 const REGISTER_SUPERVISOR_KEYWORD = "ลงทะเบียนหัวหน้า";
 
+// คำสั่งลับสำหรับทีมอะไหล่ประจำสาขา: พิมพ์ "ลงทะเบียนอะไหล่ <รหัสสาขา>" ทักมาที่ LINE OA
+// เพื่อผูก LINE userId ของทีมอะไหล่เข้ากับสาขา ใช้ตอนมีลูกค้าจองคิวซ่อม บอทจะส่งรายละเอียดรถ/อาการมาไลน์นี้ตรงๆ
+const REGISTER_PARTS_KEYWORD = "ลงทะเบียนอะไหล่";
+
 // LINE ต้องการ raw body สำหรับตรวจลายเซ็น (เพิ่ม middleware เฉพาะ route นี้ใน server.js แล้ว)
 router.post("/line", async (req, res) => {
   const signature = req.headers["x-line-signature"];
@@ -47,6 +51,11 @@ async function handleLineText(event) {
   const userId = event.source.userId;
   const text = (event.message.text || "").trim();
   const replyToken = event.replyToken;
+
+  // ---- flow ลงทะเบียนทีมอะไหล่ (เช็คก่อน เพราะขึ้นต้นคำเดียวกับลงทะเบียนพนักงาน) ----
+  if (text.startsWith(REGISTER_PARTS_KEYWORD)) {
+    return handlePartsRegister(event, userId, text, replyToken);
+  }
 
   // ---- flow ลงทะเบียนหัวหน้าสาขา (เช็คก่อน เพราะขึ้นต้นคำเดียวกับลงทะเบียนพนักงาน) ----
   if (text.startsWith(REGISTER_SUPERVISOR_KEYWORD)) {
@@ -132,6 +141,33 @@ async function handleSupervisorRegister(event, userId, text, replyToken) {
     );
   } catch (err) {
     console.error("[lineWebhook] handleSupervisorRegister error:", err.message);
+    try {
+      await line.replyMessage(replyToken, "ขอโทษครับ ลงทะเบียนไม่สำเร็จ ลองใหม่อีกครั้งนะครับ");
+    } catch (_) {}
+  }
+}
+
+// ทีมอะไหล่ประจำสาขาลงทะเบียนไลน์ของตัวเอง หลังจากนี้บอทจะส่งรายละเอียดรถ/อาการของลูกค้าที่จองคิวซ่อมมาไลน์นี้ตรงๆ
+async function handlePartsRegister(event, userId, text, replyToken) {
+  const branchId = text.replace(REGISTER_PARTS_KEYWORD, "").trim();
+  if (!branchId) {
+    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียนอะไหล่ <รหัสสาขา> เช่น ลงทะเบียนอะไหล่ branch1");
+    return;
+  }
+  try {
+    const branches = await store.getAllBranches();
+    const branch = branches.find((b) => b.id === branchId);
+    if (!branch) {
+      await line.replyMessage(replyToken, `ไม่พบรหัสสาขา "${branchId}" ในระบบ รบกวนเช็ครหัสในชีต Branches อีกครั้งนะครับ`);
+      return;
+    }
+    await store.setBranchPartsLineUserId(branchId, userId);
+    await line.replyMessage(
+      replyToken,
+      `ลงทะเบียนสำเร็จครับ ทีมอะไหล่สาขา ${branch.name} ✅ ต่อไปนี้ลูกค้าจองคิวซ่อมจะส่งรายละเอียดรถ/อาการมาที่ไลน์นี้โดยตรง`
+    );
+  } catch (err) {
+    console.error("[lineWebhook] handlePartsRegister error:", err.message);
     try {
       await line.replyMessage(replyToken, "ขอโทษครับ ลงทะเบียนไม่สำเร็จ ลองใหม่อีกครั้งนะครับ");
     } catch (_) {}
