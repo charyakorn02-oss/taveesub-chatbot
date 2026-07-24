@@ -20,7 +20,6 @@ function containsHighIntentKeyword(text) {
  * customerName: ชื่อโปรไฟล์ลูกค้าจากแพลตฟอร์มนั้นๆ (LINE display name / Facebook ชื่อ-นามสกุล) เอาไว้บันทึกลง Lead
  */
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
-  // สะสมข้อมูลที่ Claude ดึงได้ในรอบนี้เข้ากับของเดิม (ไม่ให้ค่าที่เคยทายไปถ้ารอบใหม่ส่ง null มา)
   const collected = session.collected;
   const fieldsToMerge = [
     "intent_category",
@@ -64,7 +63,6 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
   let assignedBranch = null;
   let routingMethod = "round_robin";
 
-  // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ส่งให้คนนั้นเลย ไม่ต้องหมุนคิว
   if (collected.requested_staff_name) {
     const staff = await store.findStaffByNameFuzzy(collected.requested_staff_name);
     if (staff) {
@@ -74,7 +72,6 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
     }
   }
 
-  // เงื่อนไขที่ 2: หาสาขาจากที่อยู่/พิกัดลูกค้า (การรับรถ + ที่อยู่) แล้วหมุนคิวพนักงานในสาขานั้น
   if (!assignedStaff) {
     const branches = await store.getActiveBranches();
     const geo = collected.location_text ? await geocode(collected.location_text) : null;
@@ -91,7 +88,6 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
       assignedBranch = branches[0] || null;
     }
 
-    // เงื่อนไขที่ 3: ในสาขานั้น หมุนคิวพนักงาน (openLeadsCount น้อยสุดก่อน, ถ้าเท่ากันดู lastAssignedAt เก่าสุด)
     if (assignedBranch) {
       assignedStaff = await store.pickNextInQueue(assignedBranch.id);
     }
@@ -138,11 +134,9 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
     "Lead ID: " + leadId;
 
-  // ส่งไลน์ตรงหาเซลที่อยู่ในคิว (ไม่ส่งกลุ่มสาขาแล้ว) พร้อมปุ่ม "รับทราบแล้ว"
   await notifyStaffDirect(assignedStaff, notifyText, leadId);
 
   const deliveryLine = collected.delivery_preference ? `เรื่อง${collected.delivery_preference}` : "";
-  // ถ้าเซลใส่ลิงก์แอดไลน์ส่วนตัวไว้ในชีต Staff (คอลัมน์ lineAddUrl) ให้ส่งลิงก์นี้ให้ลูกค้าแอดตรงได้เลย
   const addLineNote = assignedStaff.lineAddUrl
     ? `\nแอดไลน์ ${assignedStaff.name} คุยต่อได้เลยครับ: ${assignedStaff.lineAddUrl}`
     : "";
@@ -150,6 +144,8 @@ async function handleSalesHandoff({ collected, intent, platform, userId, custome
   return `เรียบร้อยครับ! ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปนะครับ${addLineNote} ขอบคุณที่สนใจครับ 🙏`;
 }
 
+// นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วส่งรายละเอียดตรงไปหา
+// ไลน์ทีมอะไหล่ประจำสาขานั้น (ถ้าทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์ จะ fallback ไปแจ้งกลุ่มสาขาแทน)
 async function handleServiceHandoff({ collected, platform, userId, customerName, replyContext }) {
   const branches = await store.getActiveBranches();
   let assignedBranch = null;
@@ -192,11 +188,11 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     customerNameNote +
     "สาขา: " + assignedBranch.name + "\n" +
     "วันที่นัด: " + (dateStr || "ยังไม่ระบุ") + "\n" +
-    "อาการ/งาน: " + (collected.model_or_issue || "-") + "\n" +
-    "เบอร์ลูกค้า: " + (collected.phone || "-");
+    "รุ่นรถ/อาการ: " + (collected.model_or_issue || "-") + "\n" +
+    "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยครับ)";
 
-  // นัดซ่อมยังแจ้งเข้ากลุ่มสาขาเหมือนเดิม (ไม่ผูกกับพนักงานคนเดียว)
-  await safePushLine(assignedBranch.lineGroupId, notifyText);
+  await notifyPartsDirect(assignedBranch, notifyText);
 
   return `รับทราบครับ นัดซ่อมสาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อยืนยันคิวอีกครั้งนะครับ 🙏`;
 }
@@ -211,9 +207,6 @@ function normalizeDate(text) {
   return m ? m[0] : "";
 }
 
-// ส่งไลน์ตรงหาเซลที่ได้รับมอบหมาย พร้อมปุ่ม "รับทราบแล้ว" ผูกกับ leadId
-// ถ้าเซลคนนี้ยังไม่ได้ลงทะเบียน lineUserId (ยังไม่เคยทัก "ลงทะเบียน <รหัสพนักงาน>" มาที่ OA)
-// จะ fallback ไปแจ้งกลุ่มสาขาแทน กันไม่ให้ lead หลุดหาย
 async function notifyStaffDirect(staff, text, leadId) {
   if (staff.lineUserId) {
     try {
@@ -229,6 +222,20 @@ async function notifyStaffDirect(staff, text, leadId) {
   if (branch) {
     await safePushLine(branch.lineGroupId, "⚠️ (เซลยังไม่ได้ลงทะเบียนไลน์) " + text);
   }
+}
+
+async function notifyPartsDirect(branch, text) {
+  if (branch.partsLineUserId) {
+    try {
+      await line.pushMessage(branch.partsLineUserId, text);
+      return;
+    } catch (err) {
+      console.error("[router] notifyPartsDirect pushMessage error:", err.message);
+    }
+  } else {
+    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ทีมอะไหล่ยังไม่ได้ลงทะเบียน lineUserId`);
+  }
+  await safePushLine(branch.lineGroupId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text);
 }
 
 async function safePushLine(groupId, text) {
