@@ -89,11 +89,54 @@ async function getStaffForBranch(branchId) {
   return staff.filter((s) => s.branchId === branchId);
 }
 
-async function findStaffByNameFuzzy(name) {
-  if (!name) return null;
+// คำนวณระยะห่างระหว่างข้อความ 2 ก้อน (Levenshtein edit distance) เอาไว้เทียบชื่อที่ลูกค้าพิมพ์คลาดเคลื่อนเล็กน้อย
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+// คะแนนความคล้าย 0-1 (1 คือเหมือนกันเป๊ะ) ใช้ตัดสินว่าชื่อที่พิมพ์มาน่าจะพิมพ์ผิดจากชื่อจริงคนไหน
+function nameSimilarity(a, b) {
+  if (!a || !b) return 0;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  const dist = levenshtein(a, b);
+  return 1 - dist / maxLen;
+}
+
+// หาพนักงานที่ชื่อตรง หรือ "ใกล้เคียง" กับชื่อที่ลูกค้าพิมพ์มา (รองรับพิมพ์ผิด/สะกดคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
+// คืนค่าเป็นรายการพนักงานทั้งหมดที่เข้าเกณฑ์ เรียงจากตรงที่สุดก่อน เผื่อกรณีชื่อซ้ำ/คล้ายกันหลายคน
+// ผู้เรียก (router.js) เป็นคนตัดสินใจว่าถ้าเจอมากกว่า 1 คนจะถามลูกค้าว่าสาขาไหน
+async function findStaffMatches(name) {
+  if (!name) return [];
   const staff = await getActiveStaff();
-  const lower = name.trim().toLowerCase();
-  return staff.find((s) => (s.name || '').toLowerCase().includes(lower)) || null;
+  const query = name.trim().toLowerCase();
+  if (!query) return [];
+
+  const FUZZY_THRESHOLD = 0.6;
+  const scored = staff
+    .map((s) => {
+      const staffName = (s.name || '').trim().toLowerCase();
+      if (!staffName) return { staff: s, score: 0 };
+      if (staffName.includes(query) || query.includes(staffName)) {
+        return { staff: s, score: 1 };
+      }
+      return { staff: s, score: nameSimilarity(staffName, query) };
+    })
+    .filter((r) => r.score >= FUZZY_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
+
+  return scored.map((r) => r.staff);
 }
 
 async function findStaffById(id) {
@@ -308,7 +351,7 @@ module.exports = {
   setBranchSupervisorLineUserId,
   setBranchPartsLineUserId,
   getActiveStaff,
-  findStaffByNameFuzzy,
+  findStaffMatches,
   findStaffById,
   setStaffLineUserId,
   isLineUserIdTaken,
