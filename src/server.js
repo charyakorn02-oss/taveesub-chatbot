@@ -31,6 +31,7 @@ app.use("/webhook", facebookWebhook);
 app.use("/webhook", lineWebhook);
 
 // ตรวจทุกกี่นาทีว่า lead ไหนเซลยังไม่รับทราบเกินเวลาที่กำหนด แล้วแจ้งเตือนหัวหน้าสาขา
+// หัวหน้าสาขาตอนนี้อยู่ในแท็บ Staff (role=supervisor) แล้ว ไม่ได้อยู่ที่ Branches.supervisorLineUserId อีกต่อไป
 const ESCALATION_THRESHOLD_MIN = 30;
 const ESCALATION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -40,18 +41,19 @@ async function checkEscalations() {
     for (const lead of pending) {
       try {
         const branch = await store.getBranchById(lead.branchId);
-        if (branch && branch.supervisorLineUserId) {
+        const supervisor = await store.getSupervisorForBranch(lead.branchId);
+        if (supervisor && supervisor.lineUserId) {
           const text =
             "⏰ แจ้งเตือน: เซลตอบ lead ช้าเกิน " + ESCALATION_THRESHOLD_MIN + " นาที\n" +
-            "สาขา: " + (branch.name || lead.branchId) + "\n" +
+            "สาขา: " + (branch ? branch.name : lead.branchId) + "\n" +
             "เซลที่รับผิดชอบ: " + (lead.staffName || "-") + "\n" +
             "ลูกค้า (" + (lead.platform || "-") + "): " + (lead.customerName || "-") + "\n" +
             "รุ่นที่สนใจ/อาการ: " + (lead.modelOrIssue || "-") + "\n" +
             "เบอร์ลูกค้า: " + (lead.phone || "-") + "\n" +
             "Lead ID: " + lead.leadId;
-          await line.pushMessage(branch.supervisorLineUserId, text);
+          await line.pushMessage(supervisor.lineUserId, text);
         } else {
-          console.warn("[escalation] สาขา " + lead.branchId + " ยังไม่ได้ลงทะเบียนหัวหน้าสาขา ข้ามการแจ้งเตือน");
+          console.warn("[escalation] สาขา " + lead.branchId + " ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้ามการแจ้งเตือน");
         }
         await store.markLeadEscalated(lead.leadId);
       } catch (err) {
