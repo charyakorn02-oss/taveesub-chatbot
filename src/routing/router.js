@@ -18,6 +18,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   const collected = session.collected;
   const fieldsToMerge = [
     "intent_category",
+    "customer_name",
     "model_or_issue",
     "delivery_preference",
     "location_text",
@@ -36,7 +37,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
-    return analysis.reply_text_to_customer || "ขอบคุณที่ทักมานะครับ แอดมินขอสอบถามเพิ่มเติมนิดนึงนะครับ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนครับ";
+    return analysis.reply_text_to_customer || "ขอบคุณที่ทักมานะคะ แอดมินขอสอบถามเพิ่มเติมนิดนึงนะคะ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนคะ";
   }
 
   session.fallbackCount = 0;
@@ -51,7 +52,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
   if (intent === "service") {
     return handleServiceHandoff({ collected, platform, userId, customerName, replyContext });
   }
-  return "แอดมินรับเรื่องไว้แล้วนะครับ เดี๋ยวให้ทีมงานติดต่อกลับไปนะครับ ขอบคุณที่ทักมาคุยกับแอดมินนะครับ 🙏";
+  return "แอดมินรับเรื่องไว้แล้วนะคะ เดี๋ยวให้ทีมงานติดต่อกลับไปนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
 }
 
 // เอาชื่อสาขาไปหาว่าลูกค้าตอบกลับมาตรงกับตัวเลือกไหน (ใช้ตอนก่อนหน้าเคยถามลูกค้าว่า "สะดวกสาขาไหน" ไปแล้ว)
@@ -65,10 +66,17 @@ function matchBranchFromText(text, options) {
   );
 }
 
+// ชื่อลูกค้าที่จะใช้ในข้อความแจ้งเตือน/บันทึกลง lead: เอาชื่อจริงที่ลูกค้าพิมพ์บอกมาก่อน (customer_name)
+// ถ้ายังไม่มีค่อย fallback ไปใช้ชื่อโปรไฟล์ไลน์ (customerName ที่ดึงมาอัตโนมัติ)
+function resolveCustomerName(collected, customerName) {
+  return collected.customer_name || customerName || "";
+}
+
 async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent }) {
   let assignedStaff = null;
   let assignedBranch = null;
   let routingMethod = "round_robin";
+  const finalCustomerName = resolveCustomerName(collected, customerName);
 
   // เคสค้าง: รอบก่อนเคยถามลูกค้าไปแล้วว่า "สะดวกสาขาไหน" (เพราะชื่อเซลซ้ำ/คล้ายกันหลายคน หรือหาชื่อไม่เจอเลย) -> รอบนี้เช็คคำตอบ
   if (session.pendingStaffBranchOptions && session.pendingStaffBranchOptions.length > 0) {
@@ -77,7 +85,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
 
     if (!matchedOption) {
       const names = options.map((o) => o.branchName).join(" หรือ ");
-      return `รบกวนแอดมินขอทราบอีกครั้งนะครับ สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ 🙏`;
+      return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
     }
 
     assignedBranch = await store.getBranchById(matchedOption.branchId);
@@ -122,7 +130,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
         session.pendingStaffBranchOptions = options;
         session.pendingStaffCandidateIds = matches.map((s) => s.id);
         const names = options.map((o) => o.branchName).join(" หรือ ");
-        return `พบชื่อ "${collected.requested_staff_name}" มากกว่า 1 คนเลยครับ 😊 สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ`;
+        return `พบชื่อ "${collected.requested_staff_name}" มากกว่า 1 คนเลยค่ะ 😊 สะดวกไปสาขาไหนดีระหว่าง ${names} คะ`;
       }
     } else {
       // ไม่พบชื่อนี้ในระบบเลย -> แจ้งลูกค้าตรงๆ แล้วถามว่าสะดวกสาขาไหน แทนที่จะเงียบแล้วสุ่มให้เอง
@@ -131,7 +139,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       session.pendingStaffBranchOptions = options;
       session.pendingStaffCandidateIds = null;
       const names = options.map((o) => o.branchName).join(" หรือ ");
-      return `เบื้องต้นแอดมินไม่พบชื่อ "${collected.requested_staff_name}" ในระบบนะครับ 🙏 ขอทราบก่อนได้ไหมครับว่าพี่สะดวกไปสาขาไหนระหว่าง ${names} ครับ`;
+      return `เบื้องต้นแอดมินไม่พบชื่อ "${collected.requested_staff_name}" ในระบบนะคะ 🙏 ขอทราบก่อนได้ไหมคะว่าพี่สะดวกไปสาขาไหนระหว่าง ${names} คะ`;
     }
   } else if (intent === "buying_new") {
     const resolved = await resolveAssignedBranchForBuyingNew({ collected, session, rawMessage });
@@ -151,7 +159,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   }
 
   if (!assignedStaff || !assignedBranch) {
-    return "ขอโทษด้วยนะครับ ตอนนี้คิวเซลเต็มชั่วคราว แอดมินจะรีบให้ทีมงานติดต่อกลับไปโดยเร็วที่สุดเลยครับ 🙏";
+    return "ขอโทษด้วยนะคะ ตอนนี้คิวเซลเต็มชั่วคราว แอดมินจะรีบให้ทีมงานติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ 🙏";
   }
 
   if (intent === "trade_in") {
@@ -163,7 +171,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   const lead = {
     platform,
     customerId: userId,
-    customerName: customerName || "",
+    customerName: finalCustomerName,
     intentCategory: intent,
     modelOrIssue: collected.model_or_issue || null,
     branchId: assignedBranch.id,
@@ -183,7 +191,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
 
   const badge = routingMethod === "requested" ? `🌟 ลูกค้าประจำของ ${assignedStaff.name}\n` : "";
   const deliveryNote = collected.delivery_preference ? `วิธีรับรถ: ${collected.delivery_preference}\n` : "";
-  const customerNameNote = customerName ? `ชื่อลูกค้า (${platform}): ${customerName}\n` : "";
+  const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
   const tradeInNote =
     intent === "trade_in" ? "⚠️ เทิร์นรถ: แจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้น ห้ามฟันธงราคาสุดท้ายทางแชท ลูกค้าอาจส่งภาพรถคันเดิมมาให้ดูประกอบการประเมิน\n" : "";
   const notifyText =
@@ -206,18 +214,19 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       : collected.delivery_preference === "pickup_at_branch"
       ? "เรื่องรับรถที่สาขา "
       : "";
+  const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
   const addLineNote = assignedStaff.lineAddUrl
-    ? `\nแอดไลน์ ${assignedStaff.name} คุยต่อได้เลยครับ: ${assignedStaff.lineAddUrl}`
+    ? `\n\nแอดไลน์ ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
     : "";
 
   // เทิร์นรถ: ชวนลูกค้าส่งภาพรถคันเดิมให้เซลประจำสาขาดูเพื่อประเมินราคาเบื้องต้น
   // ย้ำเสมอว่าเป็นแค่ราคาประเมินเบื้องต้น ไม่ใช่ราคาสุดท้าย ต้องนำรถเข้ามาตรวจที่สาขาอีกครั้ง
   const tradeInPriceNote =
     intent === "trade_in"
-      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} สาขา${assignedBranch.name}เลยครับ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะครับ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
+      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} สาขา${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
       : "";
 
-  return `เรียบร้อยครับ! แอดมินส่งข้อมูลของพี่ให้ทีมงานเรียบร้อยแล้วนะครับ 😊 ${deliveryLine}เดี๋ยว ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) จะติดต่อพี่กลับไปเร็วๆ นี้ครับ${tradeInPriceNote}${addLineNote}\n\nขอบคุณมากๆ นะครับที่ไว้วางใจทวีทรัพย์ยานยนต์ครับ 🙏`;
+  return `เรียบร้อยค่ะ! แอดมินส่งข้อมูลของ${nameGreeting}ให้ทีมงานเรียบร้อยแล้วนะคะ 😊 ${deliveryLine}เดี๋ยวจะมีเซล ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) ติดต่อไปนะคะ กรุณารอสักครู่นะคะ${tradeInPriceNote}${addLineNote}\n\nขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏`;
 }
 
 // หาสาขาให้ลูกค้า -> ใช้ตอน (1) ระบุชื่อเซล/ขอคุยกับพนักงาน แต่ระบบไม่รู้จักตัวตน หรือ (2) ลูกค้าเทิร์นรถที่บอกตรงๆ
@@ -270,7 +279,7 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
       return { branch: matched };
     }
     const names = candidates.map((b) => b.name).join(" หรือ ");
-    return { clarifyingReply: `รบกวนบอกแอดมินอีกครั้งนะครับ สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ 🙏` };
+    return { clarifyingReply: `รบกวนบอกแอดมินอีกครั้งนะคะ สะดวกไปสาขาไหนดีระหว่าง ${names} คะ 🙏` };
   }
 
   const geo = collected.location_text ? await geocode(collected.location_text) : null;
@@ -289,7 +298,7 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
       if (top2.length >= 2) {
         session.pendingBranchChoiceIds = top2.map((b) => b.id);
         const names = top2.map((b) => b.name).join(" หรือ ");
-        return { clarifyingReply: `แอดมินเช็คให้แล้วครับ ใกล้พี่สุดมี 2 สาขาเลยคือ ${names} สะดวกไปสาขาไหนดีครับ 😊` };
+        return { clarifyingReply: `แอดมินเช็คให้แล้วค่ะ ใกล้พี่สุดมี 2 สาขาเลยคือ ${names} สะดวกไปสาขาไหนดีคะ 😊` };
       }
       if (top2.length === 1) return { branch: top2[0] };
     }
@@ -305,6 +314,7 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
 async function handleServiceHandoff({ collected, platform, userId, customerName, replyContext }) {
   const branches = await store.getActiveBranches();
   let assignedBranch = null;
+  const finalCustomerName = resolveCustomerName(collected, customerName);
 
   const geo = collected.location_text ? await geocode(collected.location_text) : null;
   if (geo && isServiceArea(geo.province)) {
@@ -318,7 +328,7 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     assignedBranch = branches[0] || null;
   }
   if (!assignedBranch) {
-    return "ขอโทษด้วยนะครับ ตอนนี้แอดมินหาสาขาที่รับนัดซ่อมให้ไม่ได้ชั่วคราว เดี๋ยวทีมงานจะติดต่อกลับไปโดยเร็วที่สุดเลยครับ 🙏";
+    return "ขอโทษด้วยนะคะ ตอนนี้แอดมินหาสาขาที่รับนัดซ่อมให้ไม่ได้ชั่วคราว เดี๋ยวทีมงานจะติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ 🙏";
   }
 
   const dateStr = normalizeDate(collected.preferred_date || "");
@@ -341,7 +351,7 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
   };
   await store.appendBooking(booking);
 
-  const customerNameNote = customerName ? `ชื่อลูกค้า (${platform}): ${customerName}\n` : "";
+  const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
   const notifyText =
     "🔧 นัดซ่อมใหม่ (" + platform + ")\n" +
     customerNameNote +
@@ -349,11 +359,16 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     "วันที่นัด: " + (dateStr || "ยังไม่ระบุ") + "\n" +
     "รุ่นรถ/อาการ: " + (collected.model_or_issue || "-") + "\n" +
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
-    "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยครับ)";
+    "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยนะคะ)";
 
   await notifyPartsDirect(assignedBranch, assignedPartsStaff, notifyText);
 
-  return `แอดมินรับข้อมูลนัดซ่อมเรียบร้อยแล้วนะครับ 😊 สาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้ครับ ขอบคุณที่ไว้วางใจนะครับ 🙏`;
+  const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
+  const partsAddLineNote = assignedPartsStaff && assignedPartsStaff.lineAddUrl
+    ? `\n\nแอดไลน์ทีมอะไหล่ไว้คุยต่อได้เลยนะคะ: ${assignedPartsStaff.lineAddUrl}`
+    : "";
+
+  return `แอดมินรับข้อมูลนัดซ่อมของ${nameGreeting}เรียบร้อยแล้วนะคะ 😊 สาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้นะคะ${partsAddLineNote}\n\nขอบคุณที่ไว้วางใจนะคะ 🙏`;
 }
 
 function normalizeDate(text) {
