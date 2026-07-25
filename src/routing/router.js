@@ -96,9 +96,9 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     session.pendingStaffBranchOptions = null;
     session.pendingStaffCandidateIds = null;
   }
-  // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ค้นหาในระบบ (รองรับพิมพ์ชื่อคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
+  // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ค้นหาเฉพาะ role=sales ในระบบ (รองรับพิมพ์ชื่อคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
   else if (collected.requested_staff_name) {
-    const matches = await store.findStaffMatches(collected.requested_staff_name);
+    const matches = await store.findStaffMatches(collected.requested_staff_name, "sales");
 
     if (matches.length === 1) {
       assignedStaff = matches[0];
@@ -145,7 +145,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   }
 
   if (!assignedStaff && assignedBranch) {
-    // เทิร์นรถรันคิวแยกจากคิวขายรถใหม่ ไม่ใช้ตัวนับร่วมกัน
+    // เทิร์นรถรันคิวแยกจากคิวขายรถใหม่ ไม่ใช้ตัวนับร่วมกัน (ทั้งคู่ดึงเฉพาะ role=sales)
     assignedStaff =
       intent === "trade_in" ? await store.pickNextInTradeInQueue(assignedBranch.id) : await store.pickNextInQueue(assignedBranch.id);
   }
@@ -300,8 +300,8 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
   return { branch: hq };
 }
 
-// นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วส่งรายละเอียดตรงไปหา
-// ไลน์ทีมอะไหล่ประจำสาขานั้นทันที (ไม่เช็คว่าคิวช่างเต็มไหม ให้ทีมอะไหล่/ช่างไปจัดคิวเองอีกที)
+// นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วดึงคิวทีมอะไหล่ (role=parts) ของสาขานั้น
+// มาแบบหมุนคิวเหมือนเซล ถ้าไม่มีทีมอะไหล่ในสาขานั้นเลย fallback ไปหาหัวหน้าสาขาแทน
 async function handleServiceHandoff({ collected, platform, userId, customerName, replyContext }) {
   const branches = await store.getActiveBranches();
   let assignedBranch = null;
@@ -323,6 +323,11 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
 
   const dateStr = normalizeDate(collected.preferred_date || "");
 
+  const assignedPartsStaff = await store.pickNextInPartsQueue(assignedBranch.id);
+  if (assignedPartsStaff) {
+    await store.incrementOpenPartsCount(assignedPartsStaff.id);
+  }
+
   const booking = {
     platform,
     customerId: userId,
@@ -331,6 +336,8 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     issue: collected.model_or_issue || null,
     phone: collected.phone || null,
     status: "new",
+    staffName: assignedPartsStaff ? assignedPartsStaff.name : "",
+    staffPhone: assignedPartsStaff ? assignedPartsStaff.phone : "",
   };
   await store.appendBooking(booking);
 
@@ -344,7 +351,7 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
     "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยครับ)";
 
-  await notifyPartsDirect(assignedBranch, notifyText);
+  await notifyPartsDirect(assignedBranch, assignedPartsStaff, notifyText);
 
   return `แอดมินรับข้อมูลนัดซ่อมเรียบร้อยแล้วนะครับ 😊 สาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้ครับ ขอบคุณที่ไว้วางใจนะครับ 🙏`;
 }
@@ -356,7 +363,7 @@ function normalizeDate(text) {
 }
 
 // ส่งแจ้งเตือน Lead ตรงถึงไลน์ส่วนตัวเซล ถ้าเซลยังไม่ได้ลงทะเบียนไลน์
-// ให้ fallback ไปแจ้งหัวหน้าสาขา (ผู้จัดการ) แทนทันที ไม่ใช้กลุ่มไลน์อีกต่อไป
+// ให้ fallback ไปแจ้งหัวหน้าสาขา (role=supervisor ในแท็บ Staff) แทนทันที
 async function notifyStaffDirect(staff, text, leadId) {
   if (staff.lineUserId) {
     try {
@@ -368,41 +375,44 @@ async function notifyStaffDirect(staff, text, leadId) {
   } else {
     console.warn(`[router] พนักงาน ${staff.name} (${staff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
   }
-  const branch = await store.getBranchById(staff.branchId);
-  if (branch && branch.supervisorLineUserId) {
+  const supervisor = await store.getSupervisorForBranch(staff.branchId);
+  if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessage(branch.supervisorLineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + text);
+      await line.pushMessage(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + text);
       return;
     } catch (err) {
       console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
     }
   } else {
-    console.warn(`[router] สาขา ${branch ? branch.name : staff.branchId} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (supervisorLineUserId) ข้อความหลุด:`, text);
+    console.warn(`[router] สาขา ${staff.branchId} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, text);
   }
 }
 
-// ส่งแจ้งเตือนนัดซ่อมตรงถึงไลน์ส่วนตัวทีมอะไหล่ ถ้าทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์
-// ให้ fallback ไปแจ้งหัวหน้าสาขา (ผู้จัดการ) แทนทันที ไม่ใช้กลุ่มไลน์อีกต่อไป
-async function notifyPartsDirect(branch, text) {
-  if (branch.partsLineUserId) {
+// ส่งแจ้งเตือนนัดซ่อมตรงถึงไลน์ส่วนตัวทีมอะไหล่ที่ถูกเลือกจากคิว (role=parts)
+// ถ้าคนนั้นยังไม่ได้ลงทะเบียนไลน์ หรือสาขานั้นไม่มีทีมอะไหล่เลย ให้ fallback ไปแจ้งหัวหน้าสาขาแทนทันที
+async function notifyPartsDirect(branch, partsStaff, text) {
+  if (partsStaff && partsStaff.lineUserId) {
     try {
-      await line.pushMessage(branch.partsLineUserId, text);
+      await line.pushMessage(partsStaff.lineUserId, text);
       return;
     } catch (err) {
       console.error("[router] notifyPartsDirect pushMessage error:", err.message);
     }
+  } else if (partsStaff) {
+    console.warn(`[router] ทีมอะไหล่ ${partsStaff.name} (${partsStaff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
   } else {
-    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ทีมอะไหล่ยังไม่ได้ลงทะเบียน lineUserId`);
+    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ไม่มีทีมอะไหล่ (role=parts) ในระบบเลย`);
   }
-  if (branch.supervisorLineUserId) {
+  const supervisor = await store.getSupervisorForBranch(branch.id);
+  if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessage(branch.supervisorLineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text);
+      await line.pushMessage(supervisor.lineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text);
       return;
     } catch (err) {
       console.error("[router] notifyPartsDirect supervisor fallback error:", err.message);
     }
   } else {
-    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (supervisorLineUserId) ข้อความหลุด:`, text);
+    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, text);
   }
 }
 
