@@ -18,7 +18,7 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0) {
     throw new Error("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน .env");
   }
 
-  const system = buildSystemPrompt();
+  const system = await buildSystemPrompt();
   const messages = [
     ...history,
     {
