@@ -9,16 +9,17 @@ const routing = require("../routing/router");
 const store = require("../services/store");
 const { getSession, saveSession } = require("../session/sessionStore");
 
-// คำสั่งลับสำหรับพนักงาน: พิมพ์ "ลงทะเบียน <รหัสพนักงาน>" ทักมาที่ LINE OA
+// คำสั่งลับสำหรับพนักงาน: พิมพ์ "ลงทะเบียน <รหัสพนักงาน> <PIN>" ทักมาที่ LINE OA
 // เพื่อผูก LINE userId ส่วนตัวของตัวเองเข้ากับรหัสพนักงานในชีต Staff
+// ต้องใส่ PIN ที่ตรงกับคอลัมน์ registerPin ของแถวนั้นด้วย กันคนอื่นเดารหัสพนักงานแล้วสวมสิทธิ์
 // (ต้องทำครั้งเดียว หลังจากนั้นระบบจะส่ง lead ตรงมาหาแอคเคาท์ไลน์นี้)
 const REGISTER_KEYWORD = "ลงทะเบียน";
 
-// คำสั่งลับสำหรับหัวหน้าสาขา: พิมพ์ "ลงทะเบียนหัวหน้า <รหัสสาขา>" ทักมาที่ LINE OA
+// คำสั่งลับสำหรับหัวหน้าสาขา: พิมพ์ "ลงทะเบียนหัวหน้า <รหัสสาขา> <PIN>" ทักมาที่ LINE OA
 // เพื่อผูก LINE userId ของหัวหน้าเข้ากับสาขา ใช้ตอน escalate lead ที่เซลตอบช้า
 const REGISTER_SUPERVISOR_KEYWORD = "ลงทะเบียนหัวหน้า";
 
-// คำสั่งลับสำหรับทีมอะไหล่ประจำสาขา: พิมพ์ "ลงทะเบียนอะไหล่ <รหัสสาขา>" ทักมาที่ LINE OA
+// คำสั่งลับสำหรับทีมอะไหล่ประจำสาขา: พิมพ์ "ลงทะเบียนอะไหล่ <รหัสสาขา> <PIN>" ทักมาที่ LINE OA
 // เพื่อผูก LINE userId ของทีมอะไหล่เข้ากับสาขา ใช้ตอนมีลูกค้าจองคิวซ่อม บอทจะส่งรายละเอียดรถ/อาการมาไลน์นี้ตรงๆ
 const REGISTER_PARTS_KEYWORD = "ลงทะเบียนอะไหล่";
 
@@ -99,16 +100,40 @@ async function handleLineText(event) {
   }
 }
 
+// แยกข้อความหลังคำสั่งลงทะเบียนออกเป็น [รหัส, PIN] เช่น "staff1 4173" -> ["staff1","4173"]
+function parseIdAndPin(remainder) {
+  const parts = remainder.trim().split(/\s+/).filter(Boolean);
+  return { id: parts[0] || "", pin: parts[1] || "" };
+}
+
 async function handleStaffRegister(event, userId, text, replyToken) {
-  const staffId = text.replace(REGISTER_KEYWORD, "").trim();
-  if (!staffId) {
-    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียน <รหัสพนักงาน> เช่น ลงทะเบียน staff1");
+  const { id: staffId, pin } = parseIdAndPin(text.replace(REGISTER_KEYWORD, ""));
+  if (!staffId || !pin) {
+    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียน <รหัสพนักงาน> <PIN> เช่น ลงทะเบียน staff1 4173 (PIN ขอได้จากผู้จัดการ/แอดมิน)");
     return;
   }
   try {
     const staff = await store.findStaffById(staffId);
     if (!staff) {
       await line.replyMessage(replyToken, `ไม่พบรหัสพนักงาน "${staffId}" ในระบบ รบกวนเช็ครหัสในชีต Staff อีกครั้งนะครับ`);
+      return;
+    }
+    if (staff.lineUserId) {
+      await line.replyMessage(
+        replyToken,
+        `รหัสพนักงาน "${staffId}" นี้เคยลงทะเบียนไลน์ไปแล้วนะครับ ถ้าต้องการเปลี่ยนไลน์ใหม่ รบกวนให้ผู้จัดการ/แอดมินล้างค่าในชีต Staff ให้ก่อนครับ`
+      );
+      return;
+    }
+    if (String(staff.registerPin || "") !== pin) {
+      await line.replyMessage(replyToken, "PIN ไม่ถูกต้องนะครับ รบกวนเช็ค PIN กับผู้จัดการ/แอดมินอีกครั้งครับ");
+      return;
+    }
+    if (await store.isLineUserIdTaken(userId)) {
+      await line.replyMessage(
+        replyToken,
+        "ไลน์นี้ถูกผูกกับตำแหน่งอื่นในระบบไปแล้วนะครับ 1 ไลน์ลงทะเบียนได้แค่ 1 ตำแหน่งเท่านั้น ถ้ามีปัญหารบกวนติดต่อผู้จัดการ/แอดมินครับ"
+      );
       return;
     }
     await store.setStaffLineUserId(staffId, userId);
@@ -122,9 +147,9 @@ async function handleStaffRegister(event, userId, text, replyToken) {
 }
 
 async function handleSupervisorRegister(event, userId, text, replyToken) {
-  const branchId = text.replace(REGISTER_SUPERVISOR_KEYWORD, "").trim();
-  if (!branchId) {
-    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียนหัวหน้า <รหัสสาขา> เช่น ลงทะเบียนหัวหน้า branch1");
+  const { id: branchId, pin } = parseIdAndPin(text.replace(REGISTER_SUPERVISOR_KEYWORD, ""));
+  if (!branchId || !pin) {
+    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียนหัวหน้า <รหัสสาขา> <PIN> เช่น ลงทะเบียนหัวหน้า branch1 7261 (PIN ขอได้จากแอดมิน)");
     return;
   }
   try {
@@ -132,6 +157,24 @@ async function handleSupervisorRegister(event, userId, text, replyToken) {
     const branch = branches.find((b) => b.id === branchId);
     if (!branch) {
       await line.replyMessage(replyToken, `ไม่พบรหัสสาขา "${branchId}" ในระบบ รบกวนเช็ครหัสในชีต Branches อีกครั้งนะครับ`);
+      return;
+    }
+    if (branch.supervisorLineUserId) {
+      await line.replyMessage(
+        replyToken,
+        `สาขา "${branchId}" นี้เคยลงทะเบียนหัวหน้าสาขาไปแล้วนะครับ ถ้าต้องการเปลี่ยนไลน์ใหม่ รบกวนให้แอดมินล้างค่าในชีต Branches ให้ก่อนครับ`
+      );
+      return;
+    }
+    if (String(branch.supervisorPin || "") !== pin) {
+      await line.replyMessage(replyToken, "PIN ไม่ถูกต้องนะครับ รบกวนเช็ค PIN กับแอดมินอีกครั้งครับ");
+      return;
+    }
+    if (await store.isLineUserIdTaken(userId)) {
+      await line.replyMessage(
+        replyToken,
+        "ไลน์นี้ถูกผูกกับตำแหน่งอื่นในระบบไปแล้วนะครับ 1 ไลน์ลงทะเบียนได้แค่ 1 ตำแหน่งเท่านั้น ถ้ามีปัญหารบกวนติดต่อแอดมินครับ"
+      );
       return;
     }
     await store.setBranchSupervisorLineUserId(branchId, userId);
@@ -149,9 +192,9 @@ async function handleSupervisorRegister(event, userId, text, replyToken) {
 
 // ทีมอะไหล่ประจำสาขาลงทะเบียนไลน์ของตัวเอง หลังจากนี้บอทจะส่งรายละเอียดรถ/อาการของลูกค้าที่จองคิวซ่อมมาไลน์นี้ตรงๆ
 async function handlePartsRegister(event, userId, text, replyToken) {
-  const branchId = text.replace(REGISTER_PARTS_KEYWORD, "").trim();
-  if (!branchId) {
-    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียนอะไหล่ <รหัสสาขา> เช่น ลงทะเบียนอะไหล่ branch1");
+  const { id: branchId, pin } = parseIdAndPin(text.replace(REGISTER_PARTS_KEYWORD, ""));
+  if (!branchId || !pin) {
+    await line.replyMessage(replyToken, "พิมพ์ตามแบบนี้นะครับ: ลงทะเบียนอะไหล่ <รหัสสาขา> <PIN> เช่น ลงทะเบียนอะไหล่ branch1 5384 (PIN ขอได้จากแอดมิน)");
     return;
   }
   try {
@@ -159,6 +202,24 @@ async function handlePartsRegister(event, userId, text, replyToken) {
     const branch = branches.find((b) => b.id === branchId);
     if (!branch) {
       await line.replyMessage(replyToken, `ไม่พบรหัสสาขา "${branchId}" ในระบบ รบกวนเช็ครหัสในชีต Branches อีกครั้งนะครับ`);
+      return;
+    }
+    if (branch.partsLineUserId) {
+      await line.replyMessage(
+        replyToken,
+        `สาขา "${branchId}" นี้เคยลงทะเบียนทีมอะไหล่ไปแล้วนะครับ ถ้าต้องการเปลี่ยนไลน์ใหม่ รบกวนให้แอดมินล้างค่าในชีต Branches ให้ก่อนครับ`
+      );
+      return;
+    }
+    if (String(branch.partsPin || "") !== pin) {
+      await line.replyMessage(replyToken, "PIN ไม่ถูกต้องนะครับ รบกวนเช็ค PIN กับแอดมินอีกครั้งครับ");
+      return;
+    }
+    if (await store.isLineUserIdTaken(userId)) {
+      await line.replyMessage(
+        replyToken,
+        "ไลน์นี้ถูกผูกกับตำแหน่งอื่นในระบบไปแล้วนะครับ 1 ไลน์ลงทะเบียนได้แค่ 1 ตำแหน่งเท่านั้น ถ้ามีปัญหารบกวนติดต่อแอดมินครับ"
+      );
       return;
     }
     await store.setBranchPartsLineUserId(branchId, userId);
