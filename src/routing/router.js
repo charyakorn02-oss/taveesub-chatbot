@@ -33,7 +33,13 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   });
 
   const highIntent = containsHighIntentKeyword(rawMessage);
-  const shouldHandoff = Boolean(analysis.data_complete) || highIntent || session.fallbackCount >= FALLBACK_LIMIT;
+
+  // กันเหนียว: ถึง Claude จะบอกว่า data_complete = true ก็ตาม ห้าม handoff จริงถ้ายังไม่มีเบอร์โทรลูกค้าเก็บไว้เลย
+  // (ป้องกันเคส Claude วิเคราะห์ผิดพลาดแล้วส่ง lead ที่ไม่มีเบอร์/ที่อยู่ให้เซลไปโดยไม่ได้ตั้งใจ)
+  // ข้อยกเว้น: เจอคำที่บ่งชี้ high intent ชัดเจน (จอง/มัดจำ/โอนเงิน ฯลฯ) หรือค้างถามมาครบรอบ fallback แล้ว ถึงจะส่งเท่าที่มีได้
+  const hasPhone = Boolean(collected.phone);
+  const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
+  const shouldHandoff = claudeSaysComplete || highIntent || session.fallbackCount >= FALLBACK_LIMIT;
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
