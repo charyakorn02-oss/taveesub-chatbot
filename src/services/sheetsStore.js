@@ -57,7 +57,7 @@ async function getAllBranches() {
   return rows.map(rowToObject);
 }
 
-// หัวหน้าสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนหัวหน้า <รหัสสาขา>")
+// หัวหน้าสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนหัวหน้า <รหัสสาขา> <PIN>")
 async function setBranchSupervisorLineUserId(branchId, lineUserId) {
   const rows = await getRows('Branches');
   const row = rows.find((r) => r.get('id') === branchId);
@@ -67,7 +67,7 @@ async function setBranchSupervisorLineUserId(branchId, lineUserId) {
   return true;
 }
 
-// ทีมอะไหล่ประจำสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนอะไหล่ <รหัสสาขา>")
+// ทีมอะไหล่ประจำสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนอะไหล่ <รหัสสาขา> <PIN>")
 // ใช้ตอนมีลูกค้าจองคิวซ่อม บอทจะส่งรายละเอียดรถ/อาการไปหาไลน์นี้โดยตรง
 async function setBranchPartsLineUserId(branchId, lineUserId) {
   const rows = await getRows('Branches');
@@ -102,7 +102,7 @@ async function findStaffById(id) {
   return row ? rowToObject(row) : null;
 }
 
-// พนักงานลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียน <รหัสพนักงาน>")
+// พนักงานลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียน <รหัสพนักงาน> <PIN>")
 async function setStaffLineUserId(staffId, lineUserId) {
   const rows = await getRows('Staff');
   const row = rows.find((r) => r.get('id') === staffId);
@@ -110,6 +110,23 @@ async function setStaffLineUserId(staffId, lineUserId) {
   row.set('lineUserId', lineUserId);
   await row.save();
   return true;
+}
+
+// เช็คว่า LINE userId นี้เคยถูกผูกไว้กับตำแหน่งอื่น (เซล/หัวหน้าสาขา/ทีมอะไหล่) ไปแล้วหรือยัง
+// ใช้ตอนลงทะเบียนใหม่ทุกครั้ง เพื่อกันไม่ให้ไลน์เดียวไปผูกได้หลายตำแหน่ง (1 คน 1 ตำแหน่งเท่านั้น)
+async function isLineUserIdTaken(lineUserId) {
+  if (!lineUserId) return false;
+  const staffRows = await getRows('Staff');
+  if (staffRows.some((r) => r.get('lineUserId') === lineUserId)) return true;
+  const branchRows = await getRows('Branches');
+  if (
+    branchRows.some(
+      (r) => r.get('supervisorLineUserId') === lineUserId || r.get('partsLineUserId') === lineUserId
+    )
+  ) {
+    return true;
+  }
+  return false;
 }
 
 // เลือกพนักงานคนถัดไปในคิว "ขายรถใหม่" ของสาขานั้น (งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
@@ -294,6 +311,7 @@ module.exports = {
   findStaffByNameFuzzy,
   findStaffById,
   setStaffLineUserId,
+  isLineUserIdTaken,
   getStaffForBranch,
   pickNextInQueue,
   incrementOpenLeadsCount,
