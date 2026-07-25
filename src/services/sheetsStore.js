@@ -51,42 +51,31 @@ async function getBranchById(id) {
   return branches.find((b) => b.id === id) || null;
 }
 
-// ทุกสาขา ไม่กรอง active (ใช้ตอนลงทะเบียนหัวหน้าสาขา/อะไหล่ เผื่อสาขายังไม่เปิด active)
+// ทุกสาขา ไม่กรอง active (เผื่อใช้เช็คสาขาที่ยังไม่เปิด active)
 async function getAllBranches() {
   const rows = await getRows('Branches');
   return rows.map(rowToObject);
 }
 
-// หัวหน้าสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนหัวหน้า <รหัสสาขา> <PIN>")
-async function setBranchSupervisorLineUserId(branchId, lineUserId) {
-  const rows = await getRows('Branches');
-  const row = rows.find((r) => r.get('id') === branchId);
-  if (!row) return false;
-  row.set('supervisorLineUserId', lineUserId);
-  await row.save();
-  return true;
-}
-
-// ทีมอะไหล่ประจำสาขาลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียนอะไหล่ <รหัสสาขา> <PIN>")
-// ใช้ตอนมีลูกค้าจองคิวซ่อม บอทจะส่งรายละเอียดรถ/อาการไปหาไลน์นี้โดยตรง
-async function setBranchPartsLineUserId(branchId, lineUserId) {
-  const rows = await getRows('Branches');
-  const row = rows.find((r) => r.get('id') === branchId);
-  if (!row) return false;
-  row.set('partsLineUserId', lineUserId);
-  await row.save();
-  return true;
-}
-
 // --- Staff ---
+// ตอนนี้แท็บ Staff เป็นแหล่งข้อมูลเดียวของพนักงานทุกตำแหน่ง แยกด้วยคอลัมน์ role:
+// role = "sales"      -> เซลขายรถ วิ่งคิวขายรถใหม่/เทิร์นรถ
+// role = "parts"      -> ทีมอะไหล่/ช่าง วิ่งคิวนัดซ่อม
+// role = "supervisor" -> หัวหน้าสาขา ใช้เป็นตัวสำรองตอนเซล/ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์ หรือตอบ lead ช้าเกินกำหนด
 async function getActiveStaff() {
   const rows = await getRows('Staff');
   return rows.map(rowToObject).filter((r) => String(r.active).toUpperCase() === 'TRUE');
 }
 
-async function getStaffForBranch(branchId) {
+async function getStaffForBranch(branchId, role) {
   const staff = await getActiveStaff();
-  return staff.filter((s) => s.branchId === branchId);
+  return staff.filter((s) => s.branchId === branchId && (!role || String(s.role || '').trim() === role));
+}
+
+// หาหัวหน้าสาขา (role=supervisor) ของสาขานั้น ใช้เป็นตัวสำรองเวลาเซล/ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์
+async function getSupervisorForBranch(branchId) {
+  const supervisors = await getStaffForBranch(branchId, 'supervisor');
+  return supervisors.find((s) => s.lineUserId) || supervisors[0] || null;
 }
 
 // คำนวณระยะห่างระหว่างข้อความ 2 ก้อน (Levenshtein edit distance) เอาไว้เทียบชื่อที่ลูกค้าพิมพ์คลาดเคลื่อนเล็กน้อย
@@ -115,11 +104,14 @@ function nameSimilarity(a, b) {
 }
 
 // หาพนักงานที่ชื่อตรง หรือ "ใกล้เคียง" กับชื่อที่ลูกค้าพิมพ์มา (รองรับพิมพ์ผิด/สะกดคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
+// roleFilter ใส่ 'sales' เพื่อค้นหาเฉพาะเซล (กันไม่ให้ลูกค้าเผลอไปจับคู่กับหัวหน้าสาขา/ทีมอะไหล่)
 // คืนค่าเป็นรายการพนักงานทั้งหมดที่เข้าเกณฑ์ เรียงจากตรงที่สุดก่อน เผื่อกรณีชื่อซ้ำ/คล้ายกันหลายคน
-// ผู้เรียก (router.js) เป็นคนตัดสินใจว่าถ้าเจอมากกว่า 1 คนจะถามลูกค้าว่าสาขาไหน
-async function findStaffMatches(name) {
+async function findStaffMatches(name, roleFilter) {
   if (!name) return [];
-  const staff = await getActiveStaff();
+  let staff = await getActiveStaff();
+  if (roleFilter) {
+    staff = staff.filter((s) => String(s.role || '').trim() === roleFilter);
+  }
   const query = name.trim().toLowerCase();
   if (!query) return [];
 
@@ -146,6 +138,7 @@ async function findStaffById(id) {
 }
 
 // พนักงานลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียน <รหัสพนักงาน> <PIN>")
+// ใช้ได้กับพนักงานทุก role (เซล/ทีมอะไหล่/หัวหน้าสาขา) เพราะทุกคนอยู่ในแท็บ Staff เดียวกันหมดแล้ว
 async function setStaffLineUserId(staffId, lineUserId) {
   const rows = await getRows('Staff');
   const row = rows.find((r) => r.get('id') === staffId);
@@ -155,26 +148,17 @@ async function setStaffLineUserId(staffId, lineUserId) {
   return true;
 }
 
-// เช็คว่า LINE userId นี้เคยถูกผูกไว้กับตำแหน่งอื่น (เซล/หัวหน้าสาขา/ทีมอะไหล่) ไปแล้วหรือยัง
+// เช็คว่า LINE userId นี้เคยถูกผูกไว้กับรหัสพนักงานอื่นไปแล้วหรือยัง (ไม่ว่าจะ role ไหน)
 // ใช้ตอนลงทะเบียนใหม่ทุกครั้ง เพื่อกันไม่ให้ไลน์เดียวไปผูกได้หลายตำแหน่ง (1 คน 1 ตำแหน่งเท่านั้น)
 async function isLineUserIdTaken(lineUserId) {
   if (!lineUserId) return false;
   const staffRows = await getRows('Staff');
-  if (staffRows.some((r) => r.get('lineUserId') === lineUserId)) return true;
-  const branchRows = await getRows('Branches');
-  if (
-    branchRows.some(
-      (r) => r.get('supervisorLineUserId') === lineUserId || r.get('partsLineUserId') === lineUserId
-    )
-  ) {
-    return true;
-  }
-  return false;
+  return staffRows.some((r) => r.get('lineUserId') === lineUserId);
 }
 
-// เลือกพนักงานคนถัดไปในคิว "ขายรถใหม่" ของสาขานั้น (งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
+// เลือกพนักงานคนถัดไปในคิว "ขายรถใหม่" ของสาขานั้น (เฉพาะ role=sales, งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
 async function pickNextInQueue(branchId) {
-  const staff = await getStaffForBranch(branchId);
+  const staff = await getStaffForBranch(branchId, 'sales');
   if (staff.length === 0) return null;
   const sorted = staff.slice().sort((a, b) => {
     const aCount = Number(a.openLeadsCount || 0);
@@ -197,10 +181,10 @@ async function incrementOpenLeadsCount(staffId) {
   await row.save();
 }
 
-// เลือกพนักงานคนถัดไปในคิว "เทิร์นรถ" ของสาขานั้น แยกจากคิวขายรถใหม่โดยเฉพาะ
+// เลือกพนักงานคนถัดไปในคิว "เทิร์นรถ" ของสาขานั้น (เฉพาะ role=sales) แยกจากคิวขายรถใหม่โดยเฉพาะ
 // (ใช้คอลัมน์ openTradeInCount / lastAssignedTradeInAt คนละชุดกับ openLeadsCount / lastAssignedAt)
 async function pickNextInTradeInQueue(branchId) {
-  const staff = await getStaffForBranch(branchId);
+  const staff = await getStaffForBranch(branchId, 'sales');
   if (staff.length === 0) return null;
   const sorted = staff.slice().sort((a, b) => {
     const aCount = Number(a.openTradeInCount || 0);
@@ -223,6 +207,32 @@ async function incrementOpenTradeInCount(staffId) {
   await row.save();
 }
 
+// เลือกพนักงานคนถัดไปในคิว "นัดซ่อม/อะไหล่" ของสาขานั้น (เฉพาะ role=parts)
+// (ใช้คอลัมน์ openPartsCount / lastAssignedPartsAt แยกต่างหาก)
+async function pickNextInPartsQueue(branchId) {
+  const staff = await getStaffForBranch(branchId, 'parts');
+  if (staff.length === 0) return null;
+  const sorted = staff.slice().sort((a, b) => {
+    const aCount = Number(a.openPartsCount || 0);
+    const bCount = Number(b.openPartsCount || 0);
+    if (aCount !== bCount) return aCount - bCount;
+    const aTime = a.lastAssignedPartsAt ? new Date(a.lastAssignedPartsAt).getTime() : 0;
+    const bTime = b.lastAssignedPartsAt ? new Date(b.lastAssignedPartsAt).getTime() : 0;
+    return aTime - bTime;
+  });
+  return sorted[0];
+}
+
+async function incrementOpenPartsCount(staffId) {
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('id') === staffId);
+  if (!row) return;
+  const current = Number(row.get('openPartsCount') || 0);
+  row.set('openPartsCount', current + 1);
+  row.set('lastAssignedPartsAt', new Date().toISOString());
+  await row.save();
+}
+
 // --- FAQ / Models ---
 async function getFaqList() {
   const rows = await getRows('FAQ');
@@ -236,6 +246,7 @@ async function getModelList() {
 
 // --- Leads ---
 // สร้าง lead ใหม่ + คืน leadId กลับไป เพื่อเอาไปผูกกับปุ่ม "รับทราบแล้ว" ตอนส่ง LINE หาเซล
+// แท็บ Leads นี้เป็นประวัติย้อนหลังในตัว: ดูได้เลยว่า lead ไหนส่งให้เซลคนไหน วันเวลาไหน รับทราบตอนไหน
 async function appendLead(lead) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Leads'];
@@ -324,6 +335,7 @@ async function markLeadEscalated(leadId) {
 }
 
 // --- Bookings ---
+// แท็บ Bookings เป็นประวัติย้อนหลังของนัดซ่อม: ดูได้ว่านัดไหนมอบให้ทีมอะไหล่คนไหน วันเวลาไหน
 async function getBookingsForBranchDate(branchId, serviceDate) {
   const rows = await getRows('Bookings');
   return rows.map(rowToObject).filter((r) => r.branchId === branchId && r.serviceDate === serviceDate);
@@ -341,6 +353,8 @@ async function appendBooking(booking) {
     issue: booking.issue || '',
     phone: booking.phone || '',
     status: booking.status || 'new',
+    staffName: booking.staffName || '',
+    staffPhone: booking.staffPhone || '',
   });
 }
 
@@ -348,9 +362,8 @@ module.exports = {
   getActiveBranches,
   getBranchById,
   getAllBranches,
-  setBranchSupervisorLineUserId,
-  setBranchPartsLineUserId,
   getActiveStaff,
+  getSupervisorForBranch,
   findStaffMatches,
   findStaffById,
   setStaffLineUserId,
@@ -360,6 +373,8 @@ module.exports = {
   incrementOpenLeadsCount,
   pickNextInTradeInQueue,
   incrementOpenTradeInCount,
+  pickNextInPartsQueue,
+  incrementOpenPartsCount,
   getFaqList,
   getModelList,
   appendLead,
