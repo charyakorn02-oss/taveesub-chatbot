@@ -54,22 +54,84 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
   return "แอดมินรับเรื่องไว้แล้วนะครับ เดี๋ยวให้ทีมงานติดต่อกลับไปนะครับ ขอบคุณที่ทักมาคุยกับแอดมินนะครับ 🙏";
 }
 
+// เอาชื่อสาขาไปหาว่าลูกค้าตอบกลับมาตรงกับตัวเลือกไหน (ใช้ตอนก่อนหน้าเคยถามลูกค้าว่า "สะดวกสาขาไหน" ไปแล้ว)
+function matchBranchFromText(text, options) {
+  if (!text) return null;
+  return (
+    options.find((o) => {
+      const shortName = (o.branchName || "").replace(/^สาขา/, "").trim();
+      return text.includes(o.branchName) || (shortName && text.includes(shortName));
+    }) || null
+  );
+}
+
 async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent }) {
   let assignedStaff = null;
   let assignedBranch = null;
   let routingMethod = "round_robin";
 
-  // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ถ้าเจอในระบบจริง ส่งให้คนนั้นเลย ไม่ต้องหมุนคิว
-  if (collected.requested_staff_name) {
-    const staff = await store.findStaffByNameFuzzy(collected.requested_staff_name);
-    if (staff) {
-      assignedStaff = staff;
-      assignedBranch = await store.getBranchById(staff.branchId);
+  // เคสค้าง: รอบก่อนเคยถามลูกค้าไปแล้วว่า "สะดวกสาขาไหน" (เพราะชื่อเซลซ้ำ/คล้ายกันหลายคน หรือหาชื่อไม่เจอเลย) -> รอบนี้เช็คคำตอบ
+  if (session.pendingStaffBranchOptions && session.pendingStaffBranchOptions.length > 0) {
+    const options = session.pendingStaffBranchOptions;
+    const matchedOption = matchBranchFromText(rawMessage || "", options);
+
+    if (!matchedOption) {
+      const names = options.map((o) => o.branchName).join(" หรือ ");
+      return `รบกวนแอดมินขอทราบอีกครั้งนะครับ สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ 🙏`;
+    }
+
+    assignedBranch = await store.getBranchById(matchedOption.branchId);
+
+    if (session.pendingStaffCandidateIds && session.pendingStaffCandidateIds.length > 0) {
+      const candidates = await Promise.all(session.pendingStaffCandidateIds.map((id) => store.findStaffById(id)));
+      const found = candidates.find(
+        (s) => s && s.branchId === matchedOption.branchId && String(s.active).toUpperCase() === "TRUE"
+      );
+      if (found) {
+        assignedStaff = found;
+        routingMethod = "requested";
+      }
+    }
+
+    session.pendingStaffBranchOptions = null;
+    session.pendingStaffCandidateIds = null;
+  }
+  // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ค้นหาในระบบ (รองรับพิมพ์ชื่อคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
+  else if (collected.requested_staff_name) {
+    const matches = await store.findStaffMatches(collected.requested_staff_name);
+
+    if (matches.length === 1) {
+      assignedStaff = matches[0];
+      assignedBranch = await store.getBranchById(assignedStaff.branchId);
       routingMethod = "requested";
+    } else if (matches.length > 1) {
+      // ชื่อซ้ำ/คล้ายกันหลายคน -> ถามลูกค้าว่าสะดวกสาขาไหน แล้วค่อยเลือกคนที่ตรงสาขา
+      const branches = await store.getActiveBranches();
+      const branchIds = [...new Set(matches.map((s) => s.branchId))];
+      const options = branchIds
+        .map((id) => branches.find((b) => b.id === id))
+        .filter(Boolean)
+        .map((b) => ({ branchId: b.id, branchName: b.name }));
+
+      if (options.length <= 1) {
+        // ชื่อซ้ำแต่จริงๆ อยู่สาขาเดียวกัน -> เลือกคนแรกไปเลย ไม่ต้องถามซ้ำให้ลูกค้ารำคาญ
+        assignedStaff = matches[0];
+        assignedBranch = await store.getBranchById(assignedStaff.branchId);
+        routingMethod = "requested";
+      } else {
+        session.pendingStaffBranchOptions = options;
+        session.pendingStaffCandidateIds = matches.map((s) => s.id);
+        const names = options.map((o) => o.branchName).join(" หรือ ");
+        return `พบชื่อ "${collected.requested_staff_name}" มากกว่า 1 คนเลยครับ 😊 สะดวกไปสาขาไหนดีระหว่าง ${names} ครับ`;
+      }
     } else {
-      // ระบุชื่อมาแต่ไม่รู้จัก หรือขอคุยกับพนักงาน/เซลเฉยๆ -> ส่งไปสาขาที่ลูกค้าน่าจะหมายถึงทันที ไม่ถามซ้ำ
-      assignedBranch = await resolveBranchDirect(collected);
-      routingMethod = "requested_unmatched";
+      // ไม่พบชื่อนี้ในระบบเลย -> แจ้งลูกค้าตรงๆ แล้วถามว่าสะดวกสาขาไหน แทนที่จะเงียบแล้วสุ่มให้เอง
+      const branches = await store.getActiveBranches();
+      const options = branches.map((b) => ({ branchId: b.id, branchName: b.name }));
+      session.pendingStaffBranchOptions = options;
+      session.pendingStaffCandidateIds = null;
+      const names = options.map((o) => o.branchName).join(" หรือ ");
+      return `เบื้องต้นแอดมินไม่พบชื่อ "${collected.requested_staff_name}" ในระบบนะครับ 🙏 ขอทราบก่อนได้ไหมครับว่าพี่สะดวกไปสาขาไหนระหว่าง ${names} ครับ`;
     }
   } else if (intent === "buying_new") {
     const resolved = await resolveAssignedBranchForBuyingNew({ collected, session, rawMessage });
