@@ -47,8 +47,22 @@ async function pushMessage(to, text) {
   );
 }
 
-// ยิงข้อความหาเซล พร้อมปุ่ม Quick Reply "รับทราบแล้ว" ผูกกับ leadId
-async function pushMessageWithAck(userId, text, leadId) {
+// ยิงข้อความหาเซล/ทีมอะไหล่/หัวหน้าสาขา พร้อมปุ่ม Quick Reply "รับทราบแล้ว" ผูกกับงานแต่ละอัน
+// refIds รับได้ทั้งเป็น string เดียว (มีงานเดียว) หรือ array (มีงานเก่าค้างติดมาด้วย) -> สร้างปุ่มแยกให้กดรับทราบทีละงานได้จริง
+// เพราะ LINE จะโชว์ปุ่ม quick reply แค่ของข้อความล่าสุดในแชทเท่านั้น ถ้าไม่ทำแบบนี้ปุ่มของงานเก่าที่ยังค้างจะกดไม่ได้อีกเลยหลังมีข้อความใหม่มาทับ
+// LINE จำกัด quick reply ไว้สูงสุด 13 ปุ่มต่อข้อความ (ตัดที่ 13 ถ้าเกิน)
+async function pushMessageWithAck(userId, text, refIds) {
+  const ids = (Array.isArray(refIds) ? refIds : [refIds]).filter(Boolean).slice(0, 13);
+  const items = ids.map((id, i) => ({
+    type: "action",
+    action: {
+      type: "postback",
+      label: ids.length > 1 ? `รับทราบ #${i + 1}` : "รับทราบแล้ว",
+      data: "ack:" + id,
+      displayText: ids.length > 1 ? `รับทราบแล้ว #${i + 1}` : "รับทราบแล้ว",
+    },
+  }));
+
   return axios.post(
     LINE_API + "/push",
     {
@@ -57,19 +71,7 @@ async function pushMessageWithAck(userId, text, leadId) {
         {
           type: "text",
           text,
-          quickReply: {
-            items: [
-              {
-                type: "action",
-                action: {
-                  type: "postback",
-                  label: "รับทราบแล้ว",
-                  data: "ack:" + leadId,
-                  displayText: "รับทราบแล้ว",
-                },
-              },
-            ],
-          },
+          quickReply: { items },
         },
       ],
     },

@@ -126,6 +126,14 @@ async function findStaffById(id) {
   return row ? rowToObject(row) : null;
 }
 
+// หาพนักงานจาก LINE userId ส่วนตัว (ใช้ตอนพนักงานพิมพ์ "รับทราบแล้ว" เป็นข้อความเอง ไม่ได้กดปุ่ม -> ต้องรู้ก่อนว่าไลน์นี้คือใคร)
+async function findStaffByLineUserId(lineUserId) {
+  if (!lineUserId) return null;
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('lineUserId') === lineUserId);
+  return row ? rowToObject(row) : null;
+}
+
 async function setStaffLineUserId(staffId, lineUserId) {
   const rows = await getRows('Staff');
   const row = rows.find((r) => r.get('id') === staffId);
@@ -262,6 +270,7 @@ async function acknowledgeLead(leadId) {
   if (row.get('acknowledgedAt')) {
     return {
       staffName: row.get('staffName'),
+      branchId: row.get('branchId'),
       responseTimeMin: row.get('responseTimeMin'),
       alreadyAcknowledged: true,
     };
@@ -277,7 +286,7 @@ async function acknowledgeLead(leadId) {
   row.set('status', 'acknowledged');
   await row.save();
 
-  return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
+  return { staffName: row.get('staffName'), branchId: row.get('branchId'), responseTimeMin: diffStr, alreadyAcknowledged: false };
 }
 
 async function getPendingEscalations(thresholdMinutes) {
@@ -354,6 +363,7 @@ async function acknowledgeBooking(bookingId) {
   if (row.get('acknowledgedAt')) {
     return {
       staffName: row.get('staffName'),
+      branchId: row.get('branchId'),
       responseTimeMin: row.get('responseTimeMin'),
       alreadyAcknowledged: true,
     };
@@ -369,7 +379,7 @@ async function acknowledgeBooking(bookingId) {
   row.set('status', 'acknowledged');
   await row.save();
 
-  return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
+  return { staffName: row.get('staffName'), branchId: row.get('branchId'), responseTimeMin: diffStr, alreadyAcknowledged: false };
 }
 
 // ลูกค้าขอเปลี่ยนสาขานัดซ่อมภายหลัง -> ยกเลิกนัดเดิมตรงนี้ (ไม่นับเป็น escalation ต่อ เพราะปิดเคสแล้ว ไม่ใช่แค่รับทราบ)
@@ -415,6 +425,48 @@ async function markBookingEscalated(bookingId) {
   return true;
 }
 
+// หางาน (lead/booking) ทั้งหมดของพนักงานคนนี้ (แมตช์จากชื่อ+สาขา เพราะ Leads/Bookings เก็บ staffName เป็นข้อความ ไม่ใช่ staffId)
+// ที่ยังไม่มีใครกดรับทราบเลย เรียงจากเก่าไปใหม่ (งานที่ค้างนานที่สุดขึ้นก่อน) ใช้ตอนส่งแจ้งเตือนงานใหม่ให้คนเดิม
+// จะได้แนบงานค้างเก่ามาในข้อความเดียวกันเสมอ ไม่ให้หลุดไปเงียบๆ หลังมีข้อความใหม่มาทับปุ่มเก่า
+async function getPendingRefsForStaff(staffName, branchId, excludeId) {
+  if (!staffName || !branchId) return [];
+
+  const leadRows = await getRows('Leads');
+  const leadPending = leadRows
+    .map(rowToObject)
+    .filter((r) => r.staffName === staffName && r.branchId === branchId && !r.acknowledgedAt && r.leadId !== excludeId)
+    .map((r) => ({
+      refId: r.leadId,
+      type: 'lead',
+      customerName: r.customerName,
+      detail: r.modelOrIssue,
+      notifiedAt: r.notifiedAt,
+    }));
+
+  const bookingRows = await getRows('Bookings');
+  const bookingPending = bookingRows
+    .map(rowToObject)
+    .filter(
+      (r) =>
+        r.staffName === staffName &&
+        r.branchId === branchId &&
+        !r.acknowledgedAt &&
+        r.status !== 'cancelled' &&
+        r.bookingId !== excludeId
+    )
+    .map((r) => ({
+      refId: r.bookingId,
+      type: 'booking',
+      customerName: r.customerName,
+      detail: r.issue,
+      notifiedAt: r.notifiedAt,
+    }));
+
+  return [...leadPending, ...bookingPending].sort(
+    (a, b) => new Date(a.notifiedAt || 0).getTime() - new Date(b.notifiedAt || 0).getTime()
+  );
+}
+
 module.exports = {
   getActiveBranches,
   getBranchById,
@@ -423,6 +475,7 @@ module.exports = {
   getSupervisorForBranch,
   findStaffMatches,
   findStaffById,
+  findStaffByLineUserId,
   setStaffLineUserId,
   isLineUserIdTaken,
   getStaffForBranch,
@@ -444,4 +497,5 @@ module.exports = {
   cancelBooking,
   getPendingBookingEscalations,
   markBookingEscalated,
+  getPendingRefsForStaff,
 };
