@@ -26,6 +26,33 @@ function guessIntentFromText(text) {
   return null;
 }
 
+// ตัดคำว่า "สาขา" นำหน้า และวงเล็บต่อท้าย (เช่น "(นวมินทร์24)") ออกจากชื่อสาขาเพื่อเทียบกับข้อความลูกค้าแบบยืดหยุ่น
+// กันบั๊กที่เจอจริง: ชื่อสาขาในชีตเก็บเป็น "สำนักงานใหญ่(นวมินทร์24)" แต่ลูกค้าพิมพ์มาแค่ "สำนักงานใหญ่" เฉยๆ ทำให้จับคู่ไม่เจอ
+function normalizeBranchNameForMatch(name) {
+  return (name || "")
+    .replace(/^สาขา/, "")
+    .replace(/\(.*?\)/g, "")
+    .trim();
+}
+
+// เอาชื่อสาขาไปหาว่าลูกค้าตอบกลับมาตรงกับตัวเลือกไหน (ใช้ตอนก่อนหน้าเคยถามลูกค้าว่า "สะดวกสาขาไหน" ไปแล้ว)
+// เทียบแบบสองทาง (ข้อความลูกค้ามีชื่อสาขาอยู่ในนั้น หรือชื่อสาขาเต็มมีข้อความสั้นๆ ที่ลูกค้าพิมพ์อยู่ในนั้น) กันเคสชื่อสาขามีวงเล็บ/คำต่อท้าย
+function matchBranchFromText(text, options) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  return (
+    options.find((o) => {
+      const full = o.branchName || "";
+      const core = normalizeBranchNameForMatch(full);
+      return (
+        text.includes(full) ||
+        (core && text.includes(core)) ||
+        (core && trimmed.length >= 3 && full.includes(trimmed))
+      );
+    }) || null
+  );
+}
+
 // พอลูกค้าบอกที่อยู่มาปุ๊บ (เฉพาะซื้อรถใหม่ ยังไม่ได้ระบุชื่อเซล ยังไม่ได้เลือกวิธีรับรถ) ให้รีบค้นหาสาขาที่ใกล้ที่สุดจริงๆ
 // ด้วย Google Maps ทันที แทนที่จะให้ Claude เดาเองว่าอยู่ในเขตบริการไหม/สาขาไหนใกล้สุด ช่วยให้แม่นยำและไม่ต้องรอจนขั้นตอนสุดท้าย
 // ทำครั้งเดียวต่อ session (เก็บ flag session.locationBranchIntroDone กันถามซ้ำ/แนะนำซ้ำ)
@@ -51,6 +78,36 @@ async function introduceNearestBranches(locationText) {
 
   // นอกเขตบริการจริงๆ หรือหาพิกัดไม่ได้ (พิมพ์มาไม่ชัดเจน/geocode ล้มเหลว) -> ไม่เดาสาขา ให้สนญ. ดูแลแทน
   return "เข้าใจแล้วค่ะ พื้นที่ของพี่ทางสำนักงานใหญ่จะเป็นผู้ประสานงานดูแลให้นะคะ (ทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ) ขอทราบชื่อ-เบอร์ติดต่อกลับได้ไหมคะ 😊";
+}
+
+// เหมือน introduceNearestBranches แต่ใช้สำหรับ "ซ่อมรถ" (service) โดยเฉพาะ: ลูกค้าซ่อมรถต้องเลือกสาขาเสมอ (ไม่มีตัวเลือกจัดส่ง)
+// เลยแนะนำ 1-2 สาขาที่ใกล้ที่สุดให้เลือกทันทีที่รู้ที่อยู่ลูกค้า เหมือนกับตอนซื้อรถใหม่ แล้วจำสาขาที่ยืนยันแล้วไว้ใน session.confirmedServiceBranchId
+async function introduceNearestServiceBranch(locationText, session) {
+  const branches = await store.getActiveBranches();
+  const geo = locationText ? await geocode(locationText) : null;
+
+  if (geo && isServiceArea(geo.province)) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    const top2 = ranked.slice(0, 2).map((r) => r.branch);
+    if (top2.length === 0) return null;
+
+    if (top2.length === 1) {
+      session.confirmedServiceBranchId = top2[0].id;
+      return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 สาขาที่ใกล้พี่ที่สุดคือ ${top2[0].name} ค่ะ สะดวกนำรถเข้าซ่อมที่สาขานี้เลยไหมคะ`;
+    }
+    session.pendingServiceBranchIds = top2.map((b) => b.id);
+    const names = top2.map((b) => b.name).join(" หรือ ");
+    return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุดมี 2 สาขาเลยคือ ${names} สะดวกนำรถเข้าซ่อมสาขาไหนดีคะ`;
+  }
+
+  // นอกเขตบริการ/หาพิกัดไม่ได้ -> ให้สำนักงานใหญ่ดูแลแทนไปเลย ไม่ต้องถามซ้ำ
+  const hq = branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+  if (hq) session.confirmedServiceBranchId = hq.id;
+  return null;
 }
 
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
@@ -127,6 +184,37 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
+  // ซ่อมรถ (service) ที่มีที่อยู่แล้ว ยังไม่ได้ระบุช่างประจำ และยังไม่เคยแนะนำสาขาใกล้บ้านมาก่อนในเซสชันนี้
+  // -> แนะนำสาขาใกล้สุด 1-2 สาขาให้ลูกค้าเลือกก่อนเสมอ เหมือนตอนซื้อรถใหม่ (introduceNearestBranches) กันเคสระบบเดาส่งสาขาผิดไปเงียบๆ
+  if (
+    collected.intent_category === "service" &&
+    collected.location_text &&
+    !collected.requested_staff_name &&
+    !session.serviceBranchIntroDone
+  ) {
+    const introReply = await introduceNearestServiceBranch(collected.location_text, session);
+    if (introReply) {
+      session.serviceBranchIntroDone = true;
+      session.fallbackCount = 0;
+      return introReply;
+    }
+  }
+
+  // รอบก่อนเคยแนะนำ 1-2 สาขาซ่อมใกล้บ้านให้เลือกไว้ (จาก introduceNearestServiceBranch) -> รอบนี้เช็คว่าลูกค้าเลือกสาขาไหน
+  if (session.pendingServiceBranchIds && session.pendingServiceBranchIds.length > 0) {
+    const branches = await store.getActiveBranches();
+    const candidates = session.pendingServiceBranchIds.map((id) => branches.find((b) => b.id === id)).filter(Boolean);
+    const matched = matchBranchFromText(rawMessage || "", candidates.map((b) => ({ branchId: b.id, branchName: b.name })));
+    if (matched) {
+      session.pendingServiceBranchIds = null;
+      session.confirmedServiceBranchId = matched.branchId;
+      session.fallbackCount = 0;
+    } else {
+      const names = candidates.map((b) => b.name).join(" หรือ ");
+      return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกนำรถเข้าซ่อมสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+    }
+  }
+
   const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage);
 
   // เรื่อง "ซ่อมรถ"/"เทิร์นรถ" ลูกค้าต้องมาที่สาขาจริงๆ เสมอ ต่อให้เจอคำ high_intent_keyword อย่าง "จอง" (ซึ่งมักแปลว่า "จองคิวซ่อม"
@@ -138,12 +226,19 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     !collected.location_text &&
     !collected.requested_staff_name;
 
+  // ซ่อมรถ (service) ต้องมีทั้งเบอร์โทร (phone) และวันที่+ช่วงเวลาที่จะเข้า (preferred_date) เก็บครบก่อนเสมอ 100% ทุกกรณี
+  // ห้ามข้ามแม้เจอ high_intent_keyword หรือค้าง fallback ครบรอบแล้วก็ตาม กันเคสจองคิวซ่อมแบบไม่มีเบอร์/ไม่มีวันนัดที่ชัดเจนหลุดไปถึงทีมช่าง
+  const needsServiceEssentials = effectiveIntent === "service" && (!collected.phone || !collected.preferred_date);
+
   // กันเหนียว: ถึง Claude จะบอกว่า data_complete = true ก็ตาม ห้าม handoff จริงถ้ายังไม่มีเบอร์โทรลูกค้าเก็บไว้เลย
   // (ป้องกันเคส Claude วิเคราะห์ผิดพลาดแล้วส่ง lead ที่ไม่มีเบอร์/ที่อยู่ให้เซลไปโดยไม่ได้ตั้งใจ)
   // ข้อยกเว้น: เจอคำที่บ่งชี้ high intent ชัดเจน (จอง/มัดจำ/โอนเงิน ฯลฯ) หรือค้างถามมาครบรอบ fallback แล้ว ถึงจะส่งเท่าที่มีได้
+  // (ยกเว้นหมวด service ที่ต้องเก็บเบอร์+วันเวลาให้ครบ 100% เสมอ ไม่มีข้อยกเว้นแม้เจอ high intent หรือค้าง fallback ก็ตาม)
   const hasPhone = Boolean(collected.phone);
   const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
-  const shouldHandoff = claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT;
+  const shouldHandoff =
+    !needsServiceEssentials &&
+    (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT);
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
@@ -171,22 +266,17 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
     return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent });
   }
   if (intent === "service") {
-    return handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext });
+    // ถ้ารอบก่อนเคยแนะนำ/ยืนยันสาขาซ่อมใกล้บ้านลูกค้าไว้แล้ว (session.confirmedServiceBranchId) ให้ใช้สาขานั้นตรงๆ
+    // ไม่ต้อง geocode ซ้ำ กันเคสสาขาที่แนะนำไปกับสาขาที่จองจริงไม่ตรงกัน
+    let forcedBranch = null;
+    if (session.confirmedServiceBranchId) {
+      forcedBranch = await store.getBranchById(session.confirmedServiceBranchId);
+    }
+    return handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch });
   }
   // general / ไม่รู้จะตอบยังไง (เช่น Claude ตอบไม่มั่นใจ ถามซ้ำจน fallback ครบ หรือลูกค้าขอคุยกับคนจริงแบบไม่เจาะจงหมวด)
   // ก่อนหน้านี้เคสนี้แค่ตอบลูกค้าเฉยๆ ไม่มีการสร้าง lead หรือแจ้งพนักงานเลย ทำให้เรื่องหลุดไปเงียบๆ -> แก้ให้สร้าง lead จริงและแจ้งหัวหน้าสาขาเสมอ
   return handleGeneralHandoff({ collected, rawMessage, platform, userId, customerName });
-}
-
-// เอาชื่อสาขาไปหาว่าลูกค้าตอบกลับมาตรงกับตัวเลือกไหน (ใช้ตอนก่อนหน้าเคยถามลูกค้าว่า "สะดวกสาขาไหน" ไปแล้ว)
-function matchBranchFromText(text, options) {
-  if (!text) return null;
-  return (
-    options.find((o) => {
-      const shortName = (o.branchName || "").replace(/^สาขา/, "").trim();
-      return text.includes(o.branchName) || (shortName && text.includes(shortName));
-    }) || null
-  );
 }
 
 // ชื่อลูกค้าที่จะใช้ในข้อความแจ้งเตือน/บันทึกลง lead: เอาชื่อจริงที่ลูกค้าพิมพ์บอกมาก่อน (customer_name)
@@ -410,9 +500,10 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
 
   // เทิร์นรถ: ชวนลูกค้าส่งภาพรถคันเดิมให้เซลประจำสาขาดูเพื่อประเมินราคาเบื้องต้น
   // ย้ำเสมอว่าเป็นแค่ราคาประเมินเบื้องต้น ไม่ใช่ราคาสุดท้าย ต้องนำรถเข้ามาตรวจที่สาขาอีกครั้ง
+  // ชื่อสาขาที่เก็บในชีตมักมีคำว่า "สาขา" ต่อหน้าอยู่แล้ว (เช่น "สาขานวมินทร์ 90") เลยไม่ใส่คำว่า "สาขา" ซ้ำอีกตรงนี้ กันบั๊ก "สาขาสาขา..."
   const tradeInPriceNote =
     intent === "trade_in"
-      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} สาขา${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
+      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} ${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
       : "";
 
   return `เรียบร้อยค่ะ! แอดมินส่งข้อมูลของ${nameGreeting}ให้ทีมงานเรียบร้อยแล้วนะคะ 😊 ${deliveryLine}เดี๋ยวจะมีเซล ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) ติดต่อไปนะคะ กรุณารอสักครู่นะคะ${tradeInPriceNote}${addLineNote}\n\nขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏`;
@@ -425,12 +516,14 @@ async function resolveBranchDirect(collected) {
   const hintText = `${collected.location_text || ""} ${collected.requested_staff_name || ""}`.trim();
 
   if (hintText) {
-    const matchedByName = branches.find((b) => {
-      if (!b.name) return false;
-      const shortName = b.name.replace(/^สาขา/, "").trim();
-      return hintText.includes(b.name) || (shortName && hintText.includes(shortName));
-    });
-    if (matchedByName) return matchedByName;
+    const matched = matchBranchFromText(
+      hintText,
+      branches.map((b) => ({ branchId: b.id, branchName: b.name }))
+    );
+    if (matched) {
+      const matchedBranch = branches.find((b) => b.id === matched.branchId);
+      if (matchedBranch) return matchedBranch;
+    }
   }
 
   const geo = collected.location_text ? await geocode(collected.location_text) : null;
@@ -457,15 +550,13 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
     const candidates = session.pendingBranchChoiceIds
       .map((id) => branches.find((b) => b.id === id))
       .filter(Boolean);
-    const text = rawMessage || "";
-    const matched = candidates.find((b) => {
-      if (!b.name) return false;
-      const shortName = b.name.replace(/^สาขา/, "").trim();
-      return text.includes(b.name) || (shortName && text.includes(shortName));
-    });
+    const matched = matchBranchFromText(
+      rawMessage || "",
+      candidates.map((b) => ({ branchId: b.id, branchName: b.name }))
+    );
     if (matched) {
       session.pendingBranchChoiceIds = null;
-      return { branch: matched };
+      return { branch: candidates.find((b) => b.id === matched.branchId) };
     }
     const names = candidates.map((b) => b.name).join(" หรือ ");
     return { clarifyingReply: `รบกวนบอกแอดมินอีกครั้งนะคะ สะดวกไปสาขาไหนดีระหว่าง ${names} คะ 🙏` };
@@ -500,7 +591,8 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
 
 // นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วดึงคิวทีมอะไหล่ (role=parts) ของสาขานั้น
 // มาแบบหมุนคิวเหมือนเซล ถ้าไม่มีทีมอะไหล่ในสาขานั้นเลย fallback ไปหาหัวหน้าสาขาแทน
-// forcedBranch: ใช้ตอนลูกค้าขอเปลี่ยนสาขาภายหลัง (handleServiceBranchChange) จะได้ใช้สาขาที่ลูกค้าเพิ่งระบุตรงๆ ไม่ต้อง geocode ซ้ำ
+// forcedBranch: ใช้ตอนลูกค้าเคยยืนยัน/เลือกสาขาไว้แล้วในเซสชันนี้ (จาก introduceNearestServiceBranch หรือ handleServiceBranchChange)
+// จะได้ใช้สาขานั้นตรงๆ ไม่ต้อง geocode ซ้ำ กันเคสสาขาที่แนะนำไปกับสาขาที่จองจริงไม่ตรงกัน
 async function handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch }) {
   const branches = await store.getActiveBranches();
   let assignedBranch = forcedBranch || null;
@@ -575,7 +667,8 @@ async function handleServiceHandoff({ collected, session, platform, userId, cust
     ? `\n\nแอดไลน์ทีมอะไหล่ไว้คุยต่อได้เลยนะคะ: ${assignedPartsStaff.lineAddUrl}`
     : "";
 
-  return `แอดมินรับข้อมูลนัดซ่อมของ${nameGreeting}เรียบร้อยแล้วนะคะ 😊 สาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้นะคะ${partsAddLineNote}\n\nขอบคุณที่ไว้วางใจนะคะ 🙏`;
+  // ชื่อสาขาที่เก็บในชีตมักมีคำว่า "สาขา" นำหน้าอยู่แล้ว (เช่น "สาขานวมินทร์ 90") เลยไม่ใส่คำว่า "สาขา" ซ้ำอีกตรงนี้ กันบั๊ก "สาขาสาขา..."
+  return `แอดมินรับข้อมูลนัดซ่อมของ${nameGreeting}เรียบร้อยแล้วนะคะ 😊 ${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้นะคะ${partsAddLineNote}\n\nขอบคุณที่ไว้วางใจนะคะ 🙏`;
 }
 
 // ลูกค้าที่มีนัดซ่อมอยู่แล้ว (session.lastServiceBooking) ขอเปลี่ยนไปสาขาอื่นภายหลัง
@@ -615,6 +708,8 @@ async function handleServiceBranchChange({ collected, session, rawMessage, platf
   const newBranchFull = branches.find((b) => b.id === newBranch.branchId);
   session.locationSetForIntent = "service";
   session.locationConfirmedForIntent = "service";
+  session.confirmedServiceBranchId = newBranchFull ? newBranchFull.id : null;
+  session.pendingServiceBranchIds = null;
   return handleServiceHandoff({
     collected,
     session,
@@ -626,18 +721,47 @@ async function handleServiceBranchChange({ collected, session, rawMessage, platf
   });
 }
 
+// แปลงข้อความวันที่/ช่วงเวลาดิบจาก Claude ให้เป็นรูปแบบที่เก็บลงชีตได้: ถ้ามีวันที่แบบ YYYY-MM-DD ให้ดึงออกมา
+// แล้วต่อท้ายด้วยช่วงเวลา (เช้า/บ่าย/เย็น หรือเวลาโดยประมาณ) ถ้ามีระบุมาด้วย กันไม่ให้ข้อมูลช่วงเวลาที่ลูกค้าบอกหายไปเงียบๆ
+// ถ้ายังไม่มีรูปแบบวันที่ชัดเจนเลย (เช่น Claude ยังแปลงไม่ได้) ให้เก็บข้อความดิบไว้ก่อน ดีกว่าทิ้งไปเฉยๆ
 function normalizeDate(text) {
   if (!text) return "";
   const m = text.match(/\d{4}-\d{2}-\d{2}/);
-  return m ? m[0] : "";
+  if (!m) return text.trim();
+  const timeMatch = text.match(/ช่วงเช้า|ช่วงบ่าย|ช่วงเย็น|เช้า|บ่าย|เย็น|\d{1,2}[:.]\d{2}|\d{1,2}\s*โมง/);
+  return timeMatch ? `${m[0]} ${timeMatch[0]}` : m[0];
+}
+
+// สร้างข้อความสรุปงานค้างเก่าที่ยังไม่มีใครกดรับทราบ (ถ้ามี) แปะไว้ก่อนงานใหม่เสมอ พร้อมเลขที่งานแต่ละอันแยกชัดเจน
+// ใช้คู่กับปุ่ม quick reply หลายปุ่มใน pushMessageWithAck เพื่อให้กดรับทราบแต่ละงานแยกกันได้จริงแม้เป็นงานเก่าที่เคยแจ้งไปแล้วก่อนหน้านี้
+// (กันบั๊กที่เจอจริง: LINE โชว์ปุ่ม quick reply แค่ของข้อความล่าสุดเท่านั้น พองานใหม่เข้ามาปุ่มของงานเก่าที่ยังไม่รับทราบจะกดไม่ได้อีกเลย)
+function buildPendingJobsSection(pendingRefs) {
+  if (!pendingRefs.length) return "";
+  const lines = pendingRefs
+    .map((p, i) => {
+      const typeLabel = p.type === "booking" ? "นัดซ่อม" : "Lead";
+      return `#${i + 1}) [${typeLabel}] ลูกค้า: ${p.customerName || "-"} | เรื่อง: ${p.detail || "-"} | เลขที่: ${p.refId}`;
+    })
+    .join("\n");
+  return (
+    "⚠️ มีงานค้างที่ยังไม่มีใครกดรับทราบอยู่ก่อนหน้านี้ด้วยนะคะ (" + pendingRefs.length + " งาน):\n" +
+    lines +
+    "\n\n———————————\n\n"
+  );
 }
 
 // ส่งแจ้งเตือน Lead ตรงถึงไลน์ส่วนตัวเซล พร้อมปุ่ม "รับทราบแล้ว" (ผูกกับ leadId) ถ้าเซลยังไม่ได้ลงทะเบียนไลน์
 // ให้ fallback ไปแจ้งหัวหน้าสาขา (role=supervisor ในแท็บ Staff) แทนทันที (พร้อมปุ่มรับทราบเช่นกัน ผูกกับ leadId เดียวกัน)
+// ก่อนส่งจะเช็คก่อนว่าเซลคนนี้มีงานอื่นค้างไม่รับทราบอยู่ไหม ถ้ามีจะรวมมาแสดงในข้อความเดียวกันพร้อมปุ่มรับทราบแยกทุกงาน
 async function notifyStaffDirect(staff, text, leadId) {
+  const pending = await store.getPendingRefsForStaff(staff.name, staff.branchId, leadId);
+  const newJobLabel = pending.length ? `#${pending.length + 1}) ` : "";
+  const fullText = buildPendingJobsSection(pending) + newJobLabel + text;
+  const allIds = [...pending.map((p) => p.refId), leadId];
+
   if (staff.lineUserId) {
     try {
-      await line.pushMessageWithAck(staff.lineUserId, text, leadId);
+      await line.pushMessageWithAck(staff.lineUserId, fullText, allIds);
       return;
     } catch (err) {
       console.error("[router] pushMessageWithAck error:", err.message);
@@ -648,7 +772,7 @@ async function notifyStaffDirect(staff, text, leadId) {
   const supervisor = await store.getSupervisorForBranch(staff.branchId);
   if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + text, leadId);
+      await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + fullText, allIds);
       return;
     } catch (err) {
       console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
@@ -660,10 +784,16 @@ async function notifyStaffDirect(staff, text, leadId) {
 
 // ส่งแจ้งเตือนนัดซ่อมตรงถึงไลน์ส่วนตัวทีมอะไหล่ที่ถูกเลือกจากคิว (role=parts) พร้อมปุ่ม "รับทราบแล้ว" (ผูกกับ bookingId)
 // ถ้าคนนั้นยังไม่ได้ลงทะเบียนไลน์ หรือสาขานั้นไม่มีทีมอะไหล่เลย ให้ fallback ไปแจ้งหัวหน้าสาขาแทนทันที (พร้อมปุ่มรับทราบเช่นกัน)
+// เช็คงานค้างเก่าของทีมอะไหล่คนนี้เหมือนกับ notifyStaffDirect ก่อนส่งเสมอ
 async function notifyPartsDirect(branch, partsStaff, text, bookingId) {
+  const pending = partsStaff ? await store.getPendingRefsForStaff(partsStaff.name, branch.id, bookingId) : [];
+  const newJobLabel = pending.length ? `#${pending.length + 1}) ` : "";
+  const fullText = buildPendingJobsSection(pending) + newJobLabel + text;
+  const allIds = [...pending.map((p) => p.refId), bookingId];
+
   if (partsStaff && partsStaff.lineUserId) {
     try {
-      await line.pushMessageWithAck(partsStaff.lineUserId, text, bookingId);
+      await line.pushMessageWithAck(partsStaff.lineUserId, fullText, allIds);
       return;
     } catch (err) {
       console.error("[router] notifyPartsDirect pushMessageWithAck error:", err.message);
@@ -676,7 +806,7 @@ async function notifyPartsDirect(branch, partsStaff, text, bookingId) {
   const supervisor = await store.getSupervisorForBranch(branch.id);
   if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessageWithAck(supervisor.lineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text, bookingId);
+      await line.pushMessageWithAck(supervisor.lineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + fullText, allIds);
       return;
     } catch (err) {
       console.error("[router] notifyPartsDirect supervisor fallback error:", err.message);
