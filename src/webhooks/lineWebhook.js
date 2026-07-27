@@ -15,6 +15,12 @@ const { getSession, saveSession } = require("../session/sessionStore");
 // (ต้องทำครั้งเดียว หลังจากนั้นระบบจะส่ง lead/นัดซ่อม/ข้อความ escalate ตรงมาหาแอคเคาท์ไลน์นี้ตาม role ของแต่ละคน)
 const REGISTER_KEYWORD = "ลงทะเบียน";
 
+// รอลูกค้าพิมพ์ให้ครบก่อนค่อยประมวลผล+ตอบทีเดียว กันเคสลูกค้าพิมพ์แยกเป็นหลายข้อความติดกัน
+// (เช่น พิมพ์ทีละประโยค) แล้วบอทตอบสวนทุกข้อความจนดูงงๆ/ตอบไม่ตรงบริบท
+// ทุกครั้งที่มีข้อความใหม่เข้ามาจากคนเดิม จะรีเซ็ตตัวจับเวลาใหม่ ถ้าเงียบไปครบเวลานี้แล้วค่อยรวมข้อความทั้งหมดส่งไปวิเคราะห์ทีเดียว
+const BATCH_WAIT_MS = 60 * 1000; // ~1 นาที ตามที่ร้านต้องการ ปรับได้ตรงนี้จุดเดียว
+const pendingBatches = new Map(); // key = LINE userId -> { texts: string[], timer }
+
 // LINE ต้องการ raw body สำหรับตรวจลายเซ็น (เพิ่ม middleware เฉพาะ route นี้ใน server.js แล้ว)
 router.post("/line", async (req, res) => {
   const signature = req.headers["x-line-signature"];
@@ -24,7 +30,7 @@ router.post("/line", async (req, res) => {
     return res.sendStatus(401);
   }
 
-  res.sendStatus(200); // ตอบ LINE ทันทีก่อน กันหมดเวลา
+  res.sendStatus(200); // ตอบ LINE ทันทีก่อน กันหมดเวลา (ไม่เกี่ยวกับการตอบลูกค้า ซึ่งอาจถูกหน่วงไว้ตาม batch ด้านล่าง)
 
   try {
     const events = req.body.events || [];
@@ -43,18 +49,56 @@ router.post("/line", async (req, res) => {
 async function handleLineText(event) {
   const userId = event.source.userId;
   const text = (event.message.text || "").trim();
-  const replyToken = event.replyToken;
 
+  // ---- flow ลงทะเบียนพนักงาน (ใช้ร่วมกันทุกตำแหน่ง: เซล/ทีมอะไหล่/หัวหน้าสาขา) ตอบทันที ไม่ต้องรอ batch ----
   if (text.startsWith(REGISTER_KEYWORD)) {
-    return handleStaffRegister(event, userId, text, replyToken);
+    return handleStaffRegister(event, userId, text, event.replyToken);
   }
 
+  // ---- flow ปกติ: คุยกับลูกค้า ผ่าน Claude -> เข้าคิว batch รอรวมข้อความก่อนตอบ ----
+  const session = getSession("line", userId);
+  if (session.handedOff) return;
+
+  scheduleBatchedReply(userId);
+  let batch = pendingBatches.get(userId);
+  if (!batch) {
+    batch = { texts: [] };
+    pendingBatches.set(userId, batch);
+  }
+  batch.texts.push(text);
+}
+
+// รีเซ็ตตัวจับเวลาทุกครั้งที่มีข้อความใหม่เข้ามาจากลูกค้าคนเดิม ถ้าเงียบไปครบ BATCH_WAIT_MS ค่อยประมวลผลรวมทีเดียว
+function scheduleBatchedReply(userId) {
+  const existing = pendingBatches.get(userId);
+  if (existing && existing.timer) {
+    clearTimeout(existing.timer);
+  }
+  const timer = setTimeout(() => {
+    flushBatch(userId).catch((err) => console.error("[lineWebhook] flushBatch error:", err.message));
+  }, BATCH_WAIT_MS);
+
+  if (existing) {
+    existing.timer = timer;
+  } else {
+    pendingBatches.set(userId, { texts: [], timer });
+  }
+}
+
+// รวมข้อความทั้งหมดที่ลูกค้าพิมพ์มาในช่วงที่รอ (คั่นด้วยขึ้นบรรทัดใหม่) แล้ววิเคราะห์+ตอบครั้งเดียว
+// ใช้ push message แทน reply message เพราะ replyToken ของ LINE ใช้ได้แค่ครั้งเดียวและหมดอายุเร็วกว่าเวลาที่รอ (~1 นาที)
+async function flushBatch(userId) {
+  const batch = pendingBatches.get(userId);
+  pendingBatches.delete(userId);
+  if (!batch || batch.texts.length === 0) return;
+
+  const combinedText = batch.texts.join("\n");
   const session = getSession("line", userId);
   if (session.handedOff) return;
 
   try {
-    const analysis = await claude.analyzeMessage(session.history, text, session.fallbackCount);
-    session.history.push({ role: "user", content: text });
+    const analysis = await claude.analyzeMessage(session.history, combinedText, session.fallbackCount);
+    session.history.push({ role: "user", content: combinedText });
     session.history.push({ role: "assistant", content: JSON.stringify(analysis) });
 
     if (!session.customerName) {
@@ -64,26 +108,28 @@ async function handleLineText(event) {
     const replyText = await routing.handleTurn({
       session,
       analysis,
-      rawMessage: text,
+      rawMessage: combinedText,
       platform: "line",
       userId,
       customerName: session.customerName,
     });
     saveSession("line", userId, session);
-    await line.replyMessage(replyToken, replyText);
+    await line.pushMessage(userId, replyText);
   } catch (err) {
-    console.error("[lineWebhook] handleLineText error:", err.message);
+    console.error("[lineWebhook] flushBatch handle error:", err.message);
     try {
-      await line.replyMessage(replyToken, "ขอโทษนะคะ ระบบขัดข้องชั่วคราว เดี๋ยวทีมงานติดต่อกลับไปนะคะ");
+      await line.pushMessage(userId, "ขอโทษนะคะ ระบบขัดข้องชั่วคราว เดี๋ยวทีมงานติดต่อกลับไปนะคะ");
     } catch (_) {}
   }
 }
 
+// แยกข้อความหลังคำสั่งลงทะเบียนออกเป็น [รหัส, PIN] เช่น "staff1 4173" -> ["staff1","4173"]
 function parseIdAndPin(remainder) {
   const parts = remainder.trim().split(/\s+/).filter(Boolean);
   return { id: parts[0] || "", pin: parts[1] || "" };
 }
 
+// ป้ายชื่อ role ให้อ่านง่ายเป็นภาษาไทย ใช้แสดงในข้อความยืนยันหลังลงทะเบียนสำเร็จ
 function roleLabelTh(role) {
   if (role === "sales") return "เซล";
   if (role === "parts") return "ทีมอะไหล่";
@@ -91,6 +137,7 @@ function roleLabelTh(role) {
   return role || "พนักงาน";
 }
 
+// ใช้ได้กับพนักงานทุกตำแหน่ง (เซล/ทีมอะไหล่/หัวหน้าสาขา) เพราะทุกคนอยู่ในแท็บ Staff เดียวกันหมดแล้ว
 async function handleStaffRegister(event, userId, text, replyToken) {
   const { id: staffId, pin } = parseIdAndPin(text.replace(REGISTER_KEYWORD, ""));
   if (!staffId || !pin) {
