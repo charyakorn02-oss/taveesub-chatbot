@@ -107,12 +107,21 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage);
 
+  // เรื่อง "ซ่อมรถ"/"เทิร์นรถ" ลูกค้าต้องมาที่สาขาจริงๆ เสมอ ต่อให้เจอคำ high_intent_keyword อย่าง "จอง" (ซึ่งมักแปลว่า "จองคิวซ่อม"
+  // ไม่ใช่สัญญาณซื้อรถเร่งด่วนแบบที่ใช้กับ buying_new) ก็ห้าม handoff ข้ามขั้นไปเลยถ้ายังไม่รู้เลยว่าลูกค้าสะดวกสาขาไหน/มีช่างประจำไหม
+  // ไม่งั้นระบบจะเดาส่งไปสำนักงานใหญ่แบบไม่มีมูลเหตุ (บั๊กที่เจอจริง: ลูกค้าพิมพ์ "จองคิวหน่อย" ทั้งที่ยังไม่เคยบอกที่อยู่เลย)
+  const effectiveIntent = collected.intent_category || guessIntentFromText(rawMessage);
+  const needsBranchInfo =
+    (effectiveIntent === "service" || effectiveIntent === "trade_in") &&
+    !collected.location_text &&
+    !collected.requested_staff_name;
+
   // กันเหนียว: ถึง Claude จะบอกว่า data_complete = true ก็ตาม ห้าม handoff จริงถ้ายังไม่มีเบอร์โทรลูกค้าเก็บไว้เลย
   // (ป้องกันเคส Claude วิเคราะห์ผิดพลาดแล้วส่ง lead ที่ไม่มีเบอร์/ที่อยู่ให้เซลไปโดยไม่ได้ตั้งใจ)
   // ข้อยกเว้น: เจอคำที่บ่งชี้ high intent ชัดเจน (จอง/มัดจำ/โอนเงิน ฯลฯ) หรือค้างถามมาครบรอบ fallback แล้ว ถึงจะส่งเท่าที่มีได้
   const hasPhone = Boolean(collected.phone);
   const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
-  const shouldHandoff = claudeSaysComplete || highIntent || session.fallbackCount >= FALLBACK_LIMIT;
+  const shouldHandoff = claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT;
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
