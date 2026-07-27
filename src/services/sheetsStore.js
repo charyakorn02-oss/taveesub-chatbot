@@ -372,6 +372,16 @@ async function acknowledgeBooking(bookingId) {
   return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
 }
 
+// ลูกค้าขอเปลี่ยนสาขานัดซ่อมภายหลัง -> ยกเลิกนัดเดิมตรงนี้ (ไม่นับเป็น escalation ต่อ เพราะปิดเคสแล้ว ไม่ใช่แค่รับทราบ)
+async function cancelBooking(bookingId) {
+  const rows = await getRows('Bookings');
+  const row = rows.find((r) => r.get('bookingId') === bookingId);
+  if (!row) return false;
+  row.set('status', 'cancelled');
+  await row.save();
+  return true;
+}
+
 // เหมือน getPendingEscalations แต่ตรวจแท็บ Bookings (นัดซ่อม/ทีมอะไหล่) แทน
 async function getPendingBookingEscalations(thresholdMinutes) {
   const rows = await getRows('Bookings');
@@ -383,6 +393,7 @@ async function getPendingBookingEscalations(thresholdMinutes) {
     if (!obj.notifiedAt) continue;
     if (obj.acknowledgedAt) continue;
     if (obj.escalatedAt) continue;
+    if (obj.status === 'cancelled') continue; // นัดที่ลูกค้าขอเปลี่ยน/ยกเลิกไปแล้ว ไม่ต้องตามต่อ
 
     const notifiedTime = new Date(obj.notifiedAt).getTime();
     if (Number.isNaN(notifiedTime)) continue;
@@ -430,6 +441,7 @@ module.exports = {
   getBookingsForBranchDate,
   appendBooking,
   acknowledgeBooking,
+  cancelBooking,
   getPendingBookingEscalations,
   markBookingEscalated,
 };
