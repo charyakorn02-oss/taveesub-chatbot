@@ -15,6 +15,9 @@ const { getSession, saveSession } = require("../session/sessionStore");
 // (ต้องทำครั้งเดียว หลังจากนั้นระบบจะส่ง lead/นัดซ่อม/ข้อความ escalate ตรงมาหาแอคเคาท์ไลน์นี้ตาม role ของแต่ละคน)
 const REGISTER_KEYWORD = "ลงทะเบียน";
 
+// พนักงานพิมพ์ข้อความนี้ตรงๆ (ไม่ได้กดปุ่ม quick reply) ก็ให้รับทราบงานได้เหมือนกัน เผื่อปุ่มเก่าถูกข้อความใหม่ทับไปแล้วกดไม่ได้อีก
+const ACK_TEXT_PATTERN = /^รับทราบ(แล้ว)?$/;
+
 // รอลูกค้าพิมพ์ให้ครบก่อนค่อยประมวลผล+ตอบทีเดียว กันเคสลูกค้าพิมพ์แยกเป็นหลายข้อความติดกัน
 // (เช่น พิมพ์ทีละประโยค) แล้วบอทตอบสวนทุกข้อความจนดูงงๆ/ตอบไม่ตรงบริบท
 // ทุกครั้งที่มีข้อความใหม่เข้ามาจากคนเดิม จะรีเซ็ตตัวจับเวลาใหม่ ถ้าเงียบไปครบเวลานี้แล้วค่อยรวมข้อความทั้งหมดส่งไปวิเคราะห์ทีเดียว
@@ -53,6 +56,13 @@ async function handleLineText(event) {
   // ---- flow ลงทะเบียนพนักงาน (ใช้ร่วมกันทุกตำแหน่ง: เซล/ทีมอะไหล่/หัวหน้าสาขา) ตอบทันที ไม่ต้องรอ batch ----
   if (text.startsWith(REGISTER_KEYWORD)) {
     return handleStaffRegister(event, userId, text, event.replyToken);
+  }
+
+  // ---- flow พนักงานพิมพ์ "รับทราบแล้ว" ตรงๆ (ไม่ได้กดปุ่ม) ----
+  // เผื่อปุ่ม quick reply ของงานเก่าโดนข้อความใหม่ทับไปแล้วกดไม่ได้อีก ให้พิมพ์ข้อความนี้แทนได้เลย
+  // หาให้เองว่าเป็นพนักงานคนไหนจาก lineUserId ที่เคยลงทะเบียนไว้ แล้วรับทราบงานที่ค้างนานที่สุดของคนนั้นให้อัตโนมัติ ทีละงาน
+  if (ACK_TEXT_PATTERN.test(text)) {
+    return handleAckByText(userId);
   }
 
   // ---- flow ปกติ: คุยกับลูกค้า ผ่าน Claude -> เข้าคิว batch รอรวมข้อความก่อนตอบ ----
@@ -183,34 +193,68 @@ async function handleStaffRegister(event, userId, text, replyToken) {
 }
 
 // เซล/ทีมอะไหล่/หัวหน้าสาขา กดปุ่ม "รับทราบแล้ว" -> บันทึกเวลาที่ตอบกลับ
-// รองรับทั้ง lead (ขาย/เทิร์นรถ/ทั่วไป ขึ้นต้น LD-) และ booking (นัดซ่อม ขึ้นต้น BK-) เพราะใช้ปุ่มเดียวกัน (data = "ack:<id>")
-// แยกว่าจะรับทราบฝั่งไหนจาก prefix ของ id เอง
 async function handlePostback(event) {
   const data = event.postback && event.postback.data;
   if (!data || !data.startsWith("ack:")) return;
 
   const refId = data.slice(4);
-  const isBooking = refId.startsWith("BK-");
+  await acknowledgeAndReply(event.source.userId, refId);
+}
 
+// พนักงานพิมพ์ "รับทราบแล้ว" ตรงๆ เป็นข้อความ (ไม่ได้กดปุ่ม) -> หาว่าเป็นพนักงานคนไหนจาก lineUserId แล้วรับทราบงานที่ค้างนานสุดให้ทีละงาน
+async function handleAckByText(userId) {
+  try {
+    const staff = await store.findStaffByLineUserId(userId);
+    if (!staff) {
+      await line.pushMessage(userId, "ขอโทษนะคะ ไม่พบว่าไลน์นี้ลงทะเบียนเป็นพนักงานในระบบไว้ค่ะ (ลงทะเบียนก่อนด้วยคำสั่ง \"ลงทะเบียน <รหัสพนักงาน> <PIN>\")");
+      return;
+    }
+    const pending = await store.getPendingRefsForStaff(staff.name, staff.branchId, null);
+    if (pending.length === 0) {
+      await line.pushMessage(userId, "ตอนนี้ไม่มีงานค้างที่ต้องรับทราบแล้วนะคะ ✅");
+      return;
+    }
+    // รับทราบงานที่ค้างนานที่สุด (เก่าสุด) ก่อนเสมอ
+    await acknowledgeAndReply(userId, pending[0].refId);
+  } catch (err) {
+    console.error("[lineWebhook] handleAckByText error:", err.message);
+  }
+}
+
+// รับทราบงานตาม refId ที่ระบุ (ใช้ร่วมกันทั้งตอนกดปุ่ม quick reply และตอนพิมพ์ "รับทราบแล้ว" เป็นข้อความ)
+// แจ้งผลกลับพร้อมเลขที่งานเสมอ (กันสับสนว่ารับทราบงานไหนไปแล้วบ้าง) และถ้ายังมีงานอื่นค้างไม่รับทราบอยู่อีก แจ้งจำนวนที่เหลือให้รู้ด้วย
+// รองรับทั้ง lead (ขาย/เทิร์นรถ/ทั่วไป ขึ้นต้น LD-) และ booking (นัดซ่อม ขึ้นต้น BK-) แยกว่าจะรับทราบฝั่งไหนจาก prefix ของ id เอง
+async function acknowledgeAndReply(userId, refId) {
+  const isBooking = refId.startsWith("BK-");
   try {
     const result = isBooking ? await store.acknowledgeBooking(refId) : await store.acknowledgeLead(refId);
     if (!result) {
-      await line.pushMessage(event.source.userId, "ไม่พบรายการนี้ในระบบแล้วนะคะ (อาจถูกบันทึกไปแล้ว)");
+      await line.pushMessage(userId, "ไม่พบรายการนี้ในระบบแล้วนะคะ (เลขที่: " + refId + ") อาจถูกบันทึกรับทราบไปแล้ว หรือถูกยกเลิกไปก่อนหน้านี้ค่ะ");
       return;
     }
     if (result.alreadyAcknowledged) {
       await line.pushMessage(
-        event.source.userId,
-        "รับทราบแล้วก่อนหน้านี้นะคะ (ใช้เวลา " + result.responseTimeMin + " นาที)"
+        userId,
+        "รับทราบแล้วก่อนหน้านี้นะคะ (เลขที่: " + refId + ", ใช้เวลา " + result.responseTimeMin + " นาที)"
       );
       return;
     }
-    await line.pushMessage(
-      event.source.userId,
-      "บันทึกแล้วค่ะ ✅ รับทราบภายใน " + result.responseTimeMin + " นาที ขอบคุณนะคะ"
-    );
+
+    let replyText = "รับทราบแล้วค่ะ ✅ (เลขที่: " + refId + ") ใช้เวลา " + result.responseTimeMin + " นาที ขอบคุณนะคะ";
+
+    if (result.staffName && result.branchId) {
+      const remaining = await store.getPendingRefsForStaff(result.staffName, result.branchId, refId);
+      if (remaining.length > 0) {
+        replyText +=
+          "\n\nยังเหลืออีก " +
+          remaining.length +
+          " งานที่ยังไม่ได้รับทราบนะคะ พิมพ์ \"รับทราบแล้ว\" อีกครั้งเพื่อรับทราบงานถัดไป หรือกดปุ่มในข้อความก่อนหน้าได้เลยค่ะ";
+      }
+    }
+
+    await line.pushMessage(userId, replyText);
   } catch (err) {
-    console.error("[lineWebhook] handlePostback error:", err.message);
+    console.error("[lineWebhook] acknowledgeAndReply error:", err.message);
   }
 }
 
