@@ -57,15 +57,23 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0) {
       lastRawText = raw;
 
       const parsed = tryParseJson(raw);
-      if (parsed) return parsed;
+      // เดิมแค่ parse JSON สำเร็จก็ return เลย ทำให้เคส Claude ตอบ JSON ถูกต้องแต่ลืมใส่ reply_text_to_customer
+      // (หรือใส่มาเป็นสตริงว่าง) หลุดผ่านไปได้ แล้วไปโผล่เป็นข้อความ fallback กลางๆ ที่ router.js ที่ลูกค้าเห็นซ้ำๆ
+      // แก้ให้เช็คว่ามี reply_text_to_customer เป็นข้อความจริงด้วย ไม่งั้นถือว่าล้มเหลว วนลอง attempt ถัดไป
+      if (parsed && typeof parsed.reply_text_to_customer === "string" && parsed.reply_text_to_customer.trim()) {
+        return parsed;
+      }
 
-      console.warn(`[claude] parse JSON ไม่สำเร็จ (ครั้งที่ ${attempt}/${MAX_ATTEMPTS}):`, raw);
+      console.warn(
+        `[claude] JSON parse ได้แต่ reply_text_to_customer ว่าง/หาย หรือ parse ไม่สำเร็จ (ครั้งที่ ${attempt}/${MAX_ATTEMPTS}):`,
+        raw
+      );
     } catch (err) {
       console.error(`[claude] เรียก API ไม่สำเร็จ (ครั้งที่ ${attempt}/${MAX_ATTEMPTS}):`, err.message);
     }
   }
 
-  console.error("[claude] parse JSON ไม่สำเร็จหลังลองครบ", MAX_ATTEMPTS, "ครั้ง raw text ล่าสุด:", lastRawText);
+  console.error("[claude] ไม่ได้คำตอบที่ใช้ได้หลังลองครบ", MAX_ATTEMPTS, "ครั้ง raw text ล่าสุด:", lastRawText);
   // ข้อความนี้ต้องไม่พูดเกินจริงว่า "ทีมงานจะติดต่อกลับ" เพราะรอบนี้ยังไม่มีการสร้าง lead หรือแจ้งเตือนพนักงานคนไหนเลย
   // (data_complete: false ทำให้ router.js ไม่ handoff ในรอบนี้ แค่รอลูกค้าพิมพ์อีกครั้ง)
   return {
