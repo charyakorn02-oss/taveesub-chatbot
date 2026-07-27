@@ -447,7 +447,10 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
   }
   if (!assignedBranch) {
-    assignedBranch = branches[0] || null;
+    // แก้บั๊ก: เดิม fallback ไปที่ branches[0] เฉยๆ (แถวแรกในชีต Branches) ทำให้ลูกค้าที่อยู่นอกเขตบริการ (เช่น
+    // ยังมี location_text เก่าจากหัวข้ออื่นในเซสชันเดียวกันค้างอยู่ เช่นเคยบอกที่อยู่ไว้ตอนถามซื้อรถ) โดนส่งไปสาขาแรกในชีตแบบสุ่มๆ
+    // (บังเอิญคือสาขารังสิต-คลอง3 เพราะเป็นแถวบนสุด) แก้ให้ fallback ไปสำนักงานใหญ่เหมือนฟังก์ชันอื่นๆ ในไฟล์นี้ทั้งหมด
+    assignedBranch = branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
   }
   if (!assignedBranch) {
     return "ขอโทษด้วยนะคะ ตอนนี้แอดมินหาสาขาที่รับนัดซ่อมให้ไม่ได้ชั่วคราว เดี๋ยวทีมงานจะติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ 🙏";
