@@ -299,6 +299,7 @@ async function getPendingEscalations(thresholdMinutes) {
     if (!obj.notifiedAt) continue;
     if (obj.acknowledgedAt) continue;
     if (obj.escalatedAt) continue;
+    if (obj.status === 'cancelled') continue; // lead ที่ถูกยกเลิกไปแล้ว (เช่น ส่งผิดแผนก) ไม่ต้องตามต่อ
 
     const notifiedTime = new Date(obj.notifiedAt).getTime();
     if (Number.isNaN(notifiedTime)) continue;
@@ -318,6 +319,35 @@ async function markLeadEscalated(leadId) {
   row.set('escalatedAt', new Date().toISOString());
   await row.save();
   return true;
+}
+
+// ลูกค้าแจ้งว่า Lead นี้ถูกส่งผิดแผนกไป (เช่น ต้องการอะไหล่/บริการ แต่ระบบส่งเข้าคิวเซลฝ่ายขาย) -> ยกเลิก lead เดิมตรงนี้
+async function cancelLead(leadId) {
+  const rows = await getRows('Leads');
+  const row = rows.find((r) => r.get('leadId') === leadId);
+  if (!row) return false;
+  row.set('status', 'cancelled');
+  await row.save();
+  return true;
+}
+
+// คืนคิวให้เซล/เซลเทิร์นรถ หลังจากยกเลิก lead ที่เคยส่งให้เขาผิดพลาด (ตรงข้ามกับ incrementOpenLeadsCount/incrementOpenTradeInCount)
+async function decrementOpenLeadsCount(staffId) {
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('id') === staffId);
+  if (!row) return;
+  const current = Number(row.get('openLeadsCount') || 0);
+  row.set('openLeadsCount', Math.max(0, current - 1));
+  await row.save();
+}
+
+async function decrementOpenTradeInCount(staffId) {
+  const rows = await getRows('Staff');
+  const row = rows.find((r) => r.get('id') === staffId);
+  if (!row) return;
+  const current = Number(row.get('openTradeInCount') || 0);
+  row.set('openTradeInCount', Math.max(0, current - 1));
+  await row.save();
 }
 
 // --- Bookings ---
@@ -434,7 +464,14 @@ async function getPendingRefsForStaff(staffName, branchId, excludeId) {
   const leadRows = await getRows('Leads');
   const leadPending = leadRows
     .map(rowToObject)
-    .filter((r) => r.staffName === staffName && r.branchId === branchId && !r.acknowledgedAt && r.leadId !== excludeId)
+    .filter(
+      (r) =>
+        r.staffName === staffName &&
+        r.branchId === branchId &&
+        !r.acknowledgedAt &&
+        r.status !== 'cancelled' &&
+        r.leadId !== excludeId
+    )
     .map((r) => ({
       refId: r.leadId,
       type: 'lead',
@@ -491,6 +528,9 @@ module.exports = {
   acknowledgeLead,
   getPendingEscalations,
   markLeadEscalated,
+  cancelLead,
+  decrementOpenLeadsCount,
+  decrementOpenTradeInCount,
   getBookingsForBranchDate,
   appendBooking,
   acknowledgeBooking,
