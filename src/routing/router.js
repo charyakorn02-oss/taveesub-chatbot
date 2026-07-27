@@ -9,6 +9,8 @@ const bitrix24 = require("../services/bitrix24");
 const HIGH_INTENT_KEYWORDS = ["จอง", "มัดจำ", "โอนเงิน", "จัดไฟแนนซ์", "ส่งเอกสาร"];
 const FALLBACK_LIMIT = 2;
 const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา/;
+// ลูกค้าแจ้งว่า Lead ก่อนหน้านี้ถูกส่งผิดแผนก (เช่น ต้องการอะไหล่/บริการ แต่ดันไปเข้าคิวเซลฝ่ายขาย) ใช้คู่กับ session.lastLead
+const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผิดคน|ผิดแผนก|ไม่ใช่ฝ่ายขาย|ไม่ใช่เซล|ไม่ใช่แผนกขาย|ส่งผิด/;
 
 function containsHighIntentKeyword(text) {
   if (!text) return false;
@@ -24,6 +26,18 @@ function guessIntentFromText(text) {
   if (/เทิร์นรถ|เทิร์น|แลกรถ|ขายรถเก่า/.test(text)) return "trade_in";
   if (/ซื้อรถ|ออกรถ|จองรถ|ดาวน์รถ|สนใจรุ่น/.test(text)) return "buying_new";
   return null;
+}
+
+// ใช้คู่กับการป้องกันหมวด (intent_category) ที่เคยชัดเจนแล้วถูกเปลี่ยนง่ายๆ ใน handleTurn ด้านล่าง: อนุญาตให้เปลี่ยนหมวดได้จริง
+// ก็ต่อเมื่อข้อความดิบของลูกค้ามีคำสำคัญที่ตรงกับหมวดใหม่ชัดเจนเท่านั้น กันบั๊กที่เจอจริง: ลูกค้าคุยเรื่องอะไหล่/บริการ (service) อยู่
+// แล้วพิมพ์ข้อความสั้นๆ กำกวมต่อมา (เช่น "สนใจแพคเกจ ใช้ lead สนใจ size L") ทำให้ Claude เดาหมวดสลับไปเป็น buying_new ทั้งที่ยังคุยเรื่องอะไหล่อยู่
+// จนส่ง lead ไปผิดแผนก (ส่งไปหาเซลฝ่ายขายทั้งที่ควรเป็นทีมอะไหล่)
+function intentKeywordMatches(intent, text) {
+  if (!text) return false;
+  if (intent === "service") return /ซ่อม|เช็คระยะ|อะไหล่|คิวซ่อม|นัดซ่อม|เข้าศูนย์/.test(text);
+  if (intent === "trade_in") return /เทิร์นรถ|เทิร์น|แลกรถ|ขายรถเก่า/.test(text);
+  if (intent === "buying_new") return /ซื้อรถ|ออกรถ|จองรถ|ดาวน์รถ|สนใจรุ่น|คันใหม่|รถใหม่/.test(text);
+  return true; // general หรือหมวดอื่นที่ไม่ได้กำหนดคำเฉพาะ ให้เปลี่ยนได้เสมอ
 }
 
 // ตัดคำว่า "สาขา" นำหน้า และวงเล็บต่อท้าย (เช่น "(นวมินทร์24)") ออกจากชื่อสาขาเพื่อเทียบกับข้อความลูกค้าแบบยืดหยุ่น
@@ -113,7 +127,6 @@ async function introduceNearestServiceBranch(locationText, session) {
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   const collected = session.collected;
   const fieldsToMerge = [
-    "intent_category",
     "customer_name",
     "model_or_issue",
     "delivery_preference",
@@ -128,6 +141,18 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   });
 
+  // จัดการ intent_category แยกจากฟิลด์อื่นด้านบน เพราะเจอบั๊กจริง: ข้อความลูกค้าที่กำกวมสั้นๆ (เช่น พิมพ์ต่อเรื่องอะไหล่แบบไม่ชัดเจน
+  // "สนใจแพคเกจ ใช้ lead สนใจ size L") ทำให้ Claude เดาหมวดผิดพลาดสลับไปมา (เช่น จาก "service" กลายเป็น "buying_new" ทั้งที่ลูกค้ายังคุย
+  // เรื่องอะไหล่/บริการอยู่) จนส่ง lead ไปผิดแผนก (ส่งไปหาเซลทั้งที่ควรเป็นทีมอะไหล่) -> ถ้าเคยมีหมวดที่ชัดเจนอยู่ก่อนแล้ว จะไม่ยอมให้เปลี่ยน
+  // หมวดง่ายๆ เปลี่ยนได้ก็ต่อเมื่อหมวดใหม่ตรงกับหมวดเดิม หรือข้อความดิบมีคำสำคัญที่บ่งชี้หมวดใหม่จริงๆ ชัดเจนเท่านั้น (ดู intentKeywordMatches)
+  if (analysis.intent_category) {
+    const newIntent = analysis.intent_category;
+    const oldIntent = collected.intent_category;
+    if (!oldIntent || newIntent === oldIntent || intentKeywordMatches(newIntent, rawMessage)) {
+      collected.intent_category = newIntent;
+    }
+  }
+
   // เก็บว่า location_text ตัวปัจจุบันถูกบันทึกไว้ตอนคุยหัวข้อไหน (ใช้แยกเคส "เพิ่งบอกที่อยู่ครั้งแรกในหัวข้อนี้เอง" สดๆ
   // ออกจากเคส "ที่อยู่ที่มีอยู่ตอนนี้เป็นของหัวข้ออื่นที่คุยไว้ก่อนหน้า" -> กันบั๊กที่เจอจริง: ลูกค้าเพิ่งตอบที่อยู่ไปหยกๆ
   // แต่ระบบกลับถามย้ำแบบงงๆ ว่า "ก่อนหน้านี้พี่แจ้งพื้นที่ไว้ว่า..." ทั้งที่เพิ่งพิมพ์มาในเทิร์นนี้เอง
@@ -141,6 +166,13 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   if (session.lastServiceBooking && BRANCH_CHANGE_KEYWORDS.test(rawMessage || "")) {
     session.fallbackCount = 0;
     return handleServiceBranchChange({ collected, session, rawMessage, platform, userId, customerName });
+  }
+
+  // เคสลูกค้าแจ้งว่า Lead ก่อนหน้านี้ (เก็บไว้ที่ session.lastLead) ถูกส่งผิดแผนกไป (เช่น ต้องการอะไหล่/บริการ แต่ระบบดันส่งเข้าคิวเซลฝ่ายขาย)
+  // -> ต้องยกเลิก Lead เดิม คืนคิวให้เซลคนเดิม (ลดตัวนับที่เพิ่มไปตอนสร้าง lead) แจ้งเซลคนเดิมว่ายกเลิกแล้ว แล้วเริ่มจัดหมวดใหม่ให้ถูกต้อง
+  if (session.lastLead && WRONG_DEPARTMENT_KEYWORDS.test(rawMessage || "")) {
+    session.fallbackCount = 0;
+    return handleLeadReroute({ collected, session, rawMessage, platform, userId, customerName });
   }
 
   // เช็คทันทีที่มีที่อยู่ลูกค้าแล้ว (เฉพาะซื้อรถใหม่ ไม่มีชื่อเซลที่ระบุ ยังไม่ได้เลือกวิธีรับรถ) -> ค้นสาขาใกล้สุดจริงจาก Google Maps เลย
@@ -222,22 +254,29 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   // ไม่งั้นระบบจะเดาส่งไปสำนักงานใหญ่แบบไม่มีมูลเหตุ (บั๊กที่เจอจริง: ลูกค้าพิมพ์ "จองคิวหน่อย" ทั้งที่ยังไม่เคยบอกที่อยู่เลย)
   const effectiveIntent = collected.intent_category || guessIntentFromText(rawMessage);
   const needsBranchInfo =
-    (effectiveIntent === "service" || effectiveIntent === "trade_in") &&
+    (effectiveIntent === "service" || effectiveIntent === "trade_in" || effectiveIntent === "buying_new") &&
     !collected.location_text &&
     !collected.requested_staff_name;
 
-  // ซ่อมรถ (service) ต้องมีทั้งเบอร์โทร (phone) และวันที่+ช่วงเวลาที่จะเข้า (preferred_date) เก็บครบก่อนเสมอ 100% ทุกกรณี
-  // ห้ามข้ามแม้เจอ high_intent_keyword หรือค้าง fallback ครบรอบแล้วก็ตาม กันเคสจองคิวซ่อมแบบไม่มีเบอร์/ไม่มีวันนัดที่ชัดเจนหลุดไปถึงทีมช่าง
-  const needsServiceEssentials = effectiveIntent === "service" && (!collected.phone || !collected.preferred_date);
+  // ซ่อมรถ (service) ต้องมีทั้งเบอร์โทร (phone) วันที่+ช่วงเวลาที่จะเข้า (preferred_date) และรู้สาขา/ช่างประจำ เก็บครบก่อนเสมอ 100% ทุกกรณี
+  // ห้ามข้ามแม้เจอ high_intent_keyword หรือค้าง fallback ครบรอบแล้วก็ตาม กันเคสจองคิวซ่อมแบบไม่มีเบอร์/ไม่มีวันนัดที่ชัดเจน/ไม่รู้สาขาหลุดไปถึงทีมช่าง
+  const needsServiceEssentials =
+    effectiveIntent === "service" && (!collected.phone || !collected.preferred_date || needsBranchInfo);
+
+  // ซื้อรถใหม่/เทิร์นรถ ก็ต้องรู้สาขา (หรือชื่อเซลประจำตัว) และเบอร์โทรลูกค้าก่อนเสมอเช่นกัน -> ก่อนหน้านี้เงื่อนไข fallbackCount ครบรอบ
+  // จะบังคับ handoff ได้เลยแม้ยังไม่มีข้อมูลพวกนี้ ทำให้เคยเกิดบั๊กจริง: ส่ง lead ไปหาเซลแบบไม่เคยถามสาขา/เบอร์ลูกค้าเลยสักครั้ง
+  const needsSalesEssentials =
+    (effectiveIntent === "buying_new" || effectiveIntent === "trade_in") && (needsBranchInfo || !collected.phone);
 
   // กันเหนียว: ถึง Claude จะบอกว่า data_complete = true ก็ตาม ห้าม handoff จริงถ้ายังไม่มีเบอร์โทรลูกค้าเก็บไว้เลย
   // (ป้องกันเคส Claude วิเคราะห์ผิดพลาดแล้วส่ง lead ที่ไม่มีเบอร์/ที่อยู่ให้เซลไปโดยไม่ได้ตั้งใจ)
   // ข้อยกเว้น: เจอคำที่บ่งชี้ high intent ชัดเจน (จอง/มัดจำ/โอนเงิน ฯลฯ) หรือค้างถามมาครบรอบ fallback แล้ว ถึงจะส่งเท่าที่มีได้
-  // (ยกเว้นหมวด service ที่ต้องเก็บเบอร์+วันเวลาให้ครบ 100% เสมอ ไม่มีข้อยกเว้นแม้เจอ high intent หรือค้าง fallback ก็ตาม)
+  // (ยกเว้นหมวด service/buying_new/trade_in ที่ต้องเก็บข้อมูลจำเป็นให้ครบ 100% เสมอ ไม่มีข้อยกเว้นแม้เจอ high intent หรือค้าง fallback ก็ตาม)
   const hasPhone = Boolean(collected.phone);
   const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
   const shouldHandoff =
     !needsServiceEssentials &&
+    !needsSalesEssentials &&
     (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT);
 
   if (!shouldHandoff) {
@@ -466,6 +505,17 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     await bitrix24.createLead({ ...lead, id: leadId, routingMethod, highIntentKeyword: Boolean(highIntent) });
   } catch (err) {
     console.error("[router] bitrix24.createLead error:", err.message);
+  }
+
+  // จำ lead ล่าสุดไว้ใน session เผื่อลูกค้าแจ้งภายหลังว่าส่งผิดแผนก (ดู handleLeadReroute) จะได้ยกเลิก/คืนคิวให้เซลคนนี้ได้ถูกต้อง
+  if (session) {
+    session.lastLead = {
+      leadId,
+      intentCategory: intent,
+      branchId: assignedBranch.id,
+      staffId: assignedStaff.id,
+      staffName: assignedStaff.name,
+    };
   }
 
   const badge = routingMethod === "requested" ? `🌟 ลูกค้าประจำของ ${assignedStaff.name}\n` : "";
@@ -724,6 +774,40 @@ async function handleServiceBranchChange({ collected, session, rawMessage, platf
 // แปลงข้อความวันที่/ช่วงเวลาดิบจาก Claude ให้เป็นรูปแบบที่เก็บลงชีตได้: ถ้ามีวันที่แบบ YYYY-MM-DD ให้ดึงออกมา
 // แล้วต่อท้ายด้วยช่วงเวลา (เช้า/บ่าย/เย็น หรือเวลาโดยประมาณ) ถ้ามีระบุมาด้วย กันไม่ให้ข้อมูลช่วงเวลาที่ลูกค้าบอกหายไปเงียบๆ
 // ถ้ายังไม่มีรูปแบบวันที่ชัดเจนเลย (เช่น Claude ยังแปลงไม่ได้) ให้เก็บข้อความดิบไว้ก่อน ดีกว่าทิ้งไปเฉยๆ
+// ลูกค้าแจ้งว่า Lead ที่ส่งไปก่อนหน้านี้ (session.lastLead) ผิดแผนก (เช่น ต้องการอะไหล่/บริการ แต่ระบบดันส่งเข้าคิวเซลฝ่ายขาย)
+// -> ยกเลิก Lead เดิม คืนคิวให้เซลคนเดิม (ลดตัวนับ openLeadsCount/openTradeInCount ที่เพิ่มไปตอนสร้าง lead ผิดพลาด)
+// แจ้งเซลคนเดิมว่ายกเลิกแล้ว (พร้อมปุ่มรับทราบเหมือนแจ้งเตือนอื่นๆ) แล้วเคลียร์หมวดเดิมทั้งหมดให้เริ่มจัดหมวดใหม่จากข้อความถัดไปล้วนๆ
+async function handleLeadReroute({ collected, session, rawMessage, platform, userId, customerName }) {
+  const oldLead = session.lastLead;
+  if (!oldLead) {
+    return "ขอโทษด้วยนะคะ 🙏 รบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่/บริการซ่อม หรือเรื่องซื้อ-เทิร์นรถคะ แอดมินจะรีบส่งให้ทีมที่ถูกต้องทันทีเลยค่ะ";
+  }
+
+  await store.cancelLead(oldLead.leadId);
+  if (oldLead.intentCategory === "trade_in") {
+    await store.decrementOpenTradeInCount(oldLead.staffId);
+  } else {
+    await store.decrementOpenLeadsCount(oldLead.staffId);
+  }
+
+  const cancelText =
+    "❌ ยกเลิก Lead (ส่งผิดแผนก ลูกค้าแจ้งว่าจริงๆ เป็นเรื่องอื่น)\n" +
+    "Lead ID เดิม: " + oldLead.leadId;
+  const oldStaff = await store.findStaffById(oldLead.staffId);
+  if (oldStaff) {
+    await notifyStaffDirect(oldStaff, cancelText, oldLead.leadId);
+  }
+
+  // เคลียร์หมวดเดิมทั้งหมด ให้เริ่มจัดหมวดใหม่จากข้อความถัดไปของลูกค้าล้วนๆ กันหลุดมาเป็นหมวดผิดซ้ำอีก
+  collected.intent_category = null;
+  session.lastLead = null;
+  session.fallbackCount = 0;
+  session.locationBranchIntroDone = false;
+  session.serviceBranchIntroDone = false;
+
+  return "ขอโทษด้วยนะคะ 🙏 แอดมินยกเลิกคิวเดิมที่ส่งผิดแผนกให้แล้วนะคะ รบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่/บริการซ่อม หรือเรื่องซื้อ-เทิร์นรถคะ แอดมินจะส่งให้ทีมที่ถูกต้องทันทีเลยค่ะ";
+}
+
 function normalizeDate(text) {
   if (!text) return "";
   const m = text.match(/\d{4}-\d{2}-\d{2}/);
