@@ -51,6 +51,23 @@ function isBusinessHours(date = new Date()) {
   return minutesOfDay >= 8 * 60 && minutesOfDay < 17 * 60 + 30; // จันทร์–เสาร์ 08:00–17:30
 }
 
+// สร้างข้อความสรุปงานค้างเก่าที่ยังไม่มีใครกดรับทราบ (ถ้ามี) แปะไว้ก่อนเนื้อหาแจ้งเตือนเสมอ พร้อมเลขที่งานแยกชัดเจนทีละงาน
+// (เหมือนกับที่ใช้ใน routing/router.js — ทำซ้ำที่นี่เพื่อกัน circular require เพราะ server.js กับ router.js ไม่ได้พึ่งพากันโดยตรง)
+function buildPendingJobsSection(pendingRefs) {
+  if (!pendingRefs.length) return "";
+  const lines = pendingRefs
+    .map((p, i) => {
+      const typeLabel = p.type === "booking" ? "นัดซ่อม" : "Lead";
+      return `#${i + 1}) [${typeLabel}] ลูกค้า: ${p.customerName || "-"} | เรื่อง: ${p.detail || "-"} | เลขที่: ${p.refId}`;
+    })
+    .join("\n");
+  return (
+    "⚠️ มีงานค้างที่ยังไม่มีใครกดรับทราบอยู่ก่อนหน้านี้ด้วยนะคะ (" + pendingRefs.length + " งาน):\n" +
+    lines +
+    "\n\n———————————\n\n"
+  );
+}
+
 async function notifyEscalation({ refId, branchId, staffName, customerName, modelOrIssue, phone, platform, label }) {
   const branch = await store.getBranchById(branchId);
   const supervisor = await store.getSupervisorForBranch(branchId);
@@ -61,22 +78,27 @@ async function notifyEscalation({ refId, branchId, staffName, customerName, mode
     "ลูกค้า (" + (platform || "-") + "): " + (customerName || "-") + "\n" +
     "รุ่นที่สนใจ/อาการ: " + (modelOrIssue || "-") + "\n" +
     "เบอร์ลูกค้า: " + (phone || "-") + "\n" +
-    "Ref ID: " + refId;
+    "เลขที่: " + refId;
 
   // เตือนซ้ำไปหาคนเดิมที่รับผิดชอบก่อน (ถ้ามีไลน์) เผื่อแค่พลาดไม่เห็นข้อความตอนแรก
+  // พร้อมรวมงานอื่นที่ค้างไม่รับทราบของคนเดิมมาในข้อความเดียวกันด้วย (ใช้ปุ่มแยกทีละงาน กันงานเก่าหลุดไปเงียบๆ)
   const staff = staffName ? (await store.getActiveStaff()).find((s) => s.name === staffName && s.branchId === branchId) : null;
+  const pending = staff ? await store.getPendingRefsForStaff(staff.name, staff.branchId, refId) : [];
+  const fullText = buildPendingJobsSection(pending) + (pending.length ? `#${pending.length + 1}) ` : "") + text;
+  const allIds = [...pending.map((p) => p.refId), refId];
+
   if (staff && staff.lineUserId) {
     try {
-      await line.pushMessageWithAck(staff.lineUserId, text, refId);
+      await line.pushMessageWithAck(staff.lineUserId, fullText, allIds);
     } catch (err) {
       console.error("[escalation] re-notify staff error:", err.message);
     }
   }
 
-  // และแจ้งหัวหน้าสาขาเสมอ ให้ช่วยตามงานต่อ (พร้อมปุ่มรับทราบผูกกับ ref เดียวกัน)
+  // และแจ้งหัวหน้าสาขาเสมอ ให้ช่วยตามงานต่อ (พร้อมปุ่มรับทราบผูกกับ ref เดียวกัน + งานค้างเก่าเดียวกัน)
   if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessageWithAck(supervisor.lineUserId, text, refId);
+      await line.pushMessageWithAck(supervisor.lineUserId, fullText, allIds);
     } catch (err) {
       console.error("[escalation] notify supervisor error:", err.message);
     }
