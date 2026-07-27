@@ -8,6 +8,7 @@ const bitrix24 = require("../services/bitrix24");
 
 const HIGH_INTENT_KEYWORDS = ["จอง", "มัดจำ", "โอนเงิน", "จัดไฟแนนซ์", "ส่งเอกสาร"];
 const FALLBACK_LIMIT = 2;
+const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา/;
 
 function containsHighIntentKeyword(text) {
   if (!text) return false;
@@ -70,6 +71,21 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   });
 
+  // เก็บว่า location_text ตัวปัจจุบันถูกบันทึกไว้ตอนคุยหัวข้อไหน (ใช้แยกเคส "เพิ่งบอกที่อยู่ครั้งแรกในหัวข้อนี้เอง" สดๆ
+  // ออกจากเคส "ที่อยู่ที่มีอยู่ตอนนี้เป็นของหัวข้ออื่นที่คุยไว้ก่อนหน้า" -> กันบั๊กที่เจอจริง: ลูกค้าเพิ่งตอบที่อยู่ไปหยกๆ
+  // แต่ระบบกลับถามย้ำแบบงงๆ ว่า "ก่อนหน้านี้พี่แจ้งพื้นที่ไว้ว่า..." ทั้งที่เพิ่งพิมพ์มาในเทิร์นนี้เอง
+  if (analysis.location_text) {
+    session.locationSetForIntent = collected.intent_category;
+  }
+
+  // เคสลูกค้าที่เพิ่งมีนัดซ่อมอยู่แล้วในเซสชันนี้ (เก็บไว้ที่ session.lastServiceBooking) แล้วขอเปลี่ยนสาขาใหม่ภายหลัง
+  // เช่น "เปลี่ยนสาขาคลองสามเป็นสำนักงานใหญ่" -> ต้องยกเลิกนัดเดิม แจ้งทีมอะไหล่/สาขาเดิมว่ายกเลิก แล้วจองใหม่ให้สาขาใหม่ทันที
+  // ห้ามปล่อยให้มีนัดค้างซ้ำซ้อนที่สาขาเดิมโดยไม่มีใครรู้ว่าลูกค้าไม่มาแล้ว
+  if (session.lastServiceBooking && BRANCH_CHANGE_KEYWORDS.test(rawMessage || "")) {
+    session.fallbackCount = 0;
+    return handleServiceBranchChange({ collected, session, rawMessage, platform, userId, customerName });
+  }
+
   // เช็คทันทีที่มีที่อยู่ลูกค้าแล้ว (เฉพาะซื้อรถใหม่ ไม่มีชื่อเซลที่ระบุ ยังไม่ได้เลือกวิธีรับรถ) -> ค้นสาขาใกล้สุดจริงจาก Google Maps เลย
   if (
     collected.intent_category === "buying_new" &&
@@ -87,16 +103,22 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   }
 
   // เคสเปลี่ยนหัวข้อคุยมาเป็น "ซ่อมรถ" หรือ "เทิร์นรถ" (ทั้งคู่ต้องให้ลูกค้ามาที่สาขาจริงๆ ไม่ใช่จัดส่ง)
-  // แต่ที่อยู่ (location_text) ที่มีอยู่ตอนนี้อาจเป็นของหัวข้ออื่นที่คุยไว้ก่อนหน้าในเซสชันเดียวกัน (เช่น เคยบอกไว้ตอนถามซื้อรถ)
+  // แต่ที่อยู่ (location_text) ที่มีอยู่ตอนนี้เป็นของหัวข้ออื่นที่คุยไว้ก่อนหน้าในเซสชันเดียวกันจริงๆ (เช็คจาก session.locationSetForIntent
+  // ว่าถูกบันทึกไว้ตอนหัวข้อไหน ถ้าคนละหัวข้อกับตอนนี้ถึงจะถือว่าเป็นของเก่าที่ต้องถามย้ำ ถ้าเพิ่งบันทึกในหัวข้อนี้เองไม่ต้องถาม)
   // ห้ามเอาที่อยู่เก่ามาผูกสาขาให้เงียบๆ เพราะลูกค้าอาจสะดวกคนละที่ (เช่น ให้จัดส่งรถที่บ้าน แต่จะนำรถเข้าซ่อมที่ใกล้ที่ทำงานแทน)
-  // ต้องถามย้ำให้ลูกค้ายืนยัน/แก้ที่อยู่ก่อนครั้งเดียวต่อการเปลี่ยนหัวข้อ แล้วค่อยปล่อยให้ flow ปกติหาสาขาต่อ
   const needsBranchVisit = collected.intent_category === "service" || collected.intent_category === "trade_in";
-  if (needsBranchVisit && collected.location_text && session.locationConfirmedForIntent !== collected.intent_category) {
+  const locationIsCarryOver =
+    collected.location_text &&
+    session.locationSetForIntent &&
+    session.locationSetForIntent !== collected.intent_category;
+
+  if (needsBranchVisit && locationIsCarryOver && session.locationConfirmedForIntent !== collected.intent_category) {
     if (session.pendingLocationReconfirmIntent === collected.intent_category) {
       // รอบนี้คือคำตอบของคำถามยืนยันที่อยู่ที่เพิ่งถามไป ไม่ว่าลูกค้าจะตอบว่าเหมือนเดิม หรือบอกที่ใหม่มา (ระบบ merge เป็น location_text ให้แล้วด้านบน)
       // ถือว่ายืนยันแล้ว เคลียร์ flag แล้วปล่อยให้ flow ปกติทำงานต่อจากตรงนี้ในเทิร์นเดียวกันได้เลย
       session.pendingLocationReconfirmIntent = null;
       session.locationConfirmedForIntent = collected.intent_category;
+      session.locationSetForIntent = collected.intent_category;
     } else {
       session.pendingLocationReconfirmIntent = collected.intent_category;
       session.fallbackCount = 0;
@@ -149,7 +171,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
     return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent });
   }
   if (intent === "service") {
-    return handleServiceHandoff({ collected, platform, userId, customerName, replyContext });
+    return handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext });
   }
   // general / ไม่รู้จะตอบยังไง (เช่น Claude ตอบไม่มั่นใจ ถามซ้ำจน fallback ครบ หรือลูกค้าขอคุยกับคนจริงแบบไม่เจาะจงหมวด)
   // ก่อนหน้านี้เคสนี้แค่ตอบลูกค้าเฉยๆ ไม่มีการสร้าง lead หรือแจ้งพนักงานเลย ทำให้เรื่องหลุดไปเงียบๆ -> แก้ให้สร้าง lead จริงและแจ้งหัวหน้าสาขาเสมอ
@@ -478,18 +500,21 @@ async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessag
 
 // นัดซ่อม: ลูกค้าพิมพ์รุ่นรถ/อาการเข้ามา บอทหาสาขาที่ใกล้ที่สุด แล้วดึงคิวทีมอะไหล่ (role=parts) ของสาขานั้น
 // มาแบบหมุนคิวเหมือนเซล ถ้าไม่มีทีมอะไหล่ในสาขานั้นเลย fallback ไปหาหัวหน้าสาขาแทน
-async function handleServiceHandoff({ collected, platform, userId, customerName, replyContext }) {
+// forcedBranch: ใช้ตอนลูกค้าขอเปลี่ยนสาขาภายหลัง (handleServiceBranchChange) จะได้ใช้สาขาที่ลูกค้าเพิ่งระบุตรงๆ ไม่ต้อง geocode ซ้ำ
+async function handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch }) {
   const branches = await store.getActiveBranches();
-  let assignedBranch = null;
+  let assignedBranch = forcedBranch || null;
   const finalCustomerName = resolveCustomerName(collected, customerName);
 
-  const geo = collected.location_text ? await geocode(collected.location_text) : null;
-  if (geo && isServiceArea(geo.province)) {
-    const ranked = branches
-      .filter((b) => b.lat && b.long)
-      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
-      .sort((a, b) => a.distanceKm - b.distanceKm);
-    assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
+  if (!assignedBranch) {
+    const geo = collected.location_text ? await geocode(collected.location_text) : null;
+    if (geo && isServiceArea(geo.province)) {
+      const ranked = branches
+        .filter((b) => b.lat && b.long)
+        .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+      assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
+    }
   }
   if (!assignedBranch) {
     // เดิม fallback ไปที่ branches[0] เฉยๆ (แถวแรกในชีต Branches) ทำให้ลูกค้าที่อยู่นอกเขตบริการโดนส่งไปสาขาแรกในชีตแบบสุ่มๆ
@@ -521,6 +546,17 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
   };
   const bookingId = await store.appendBooking(booking);
 
+  // จำนัดล่าสุดไว้ใน session เผื่อลูกค้าขอเปลี่ยนสาขาภายหลังในเซสชันเดียวกัน (ดู handleServiceBranchChange)
+  if (session) {
+    session.lastServiceBooking = {
+      bookingId,
+      branchId: assignedBranch.id,
+      branchName: assignedBranch.name,
+      partsStaffId: assignedPartsStaff ? assignedPartsStaff.id : null,
+      partsStaffName: assignedPartsStaff ? assignedPartsStaff.name : "",
+    };
+  }
+
   const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
   const notifyText =
     "🔧 นัดซ่อมใหม่ (" + platform + ")\n" +
@@ -540,6 +576,54 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     : "";
 
   return `แอดมินรับข้อมูลนัดซ่อมของ${nameGreeting}เรียบร้อยแล้วนะคะ 😊 สาขา${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้นะคะ${partsAddLineNote}\n\nขอบคุณที่ไว้วางใจนะคะ 🙏`;
+}
+
+// ลูกค้าที่มีนัดซ่อมอยู่แล้ว (session.lastServiceBooking) ขอเปลี่ยนไปสาขาอื่นภายหลัง
+// -> ยกเลิกนัดเดิม แจ้งทีมอะไหล่/สาขาเดิมว่ายกเลิก (พร้อมปุ่มรับทราบเหมือนแจ้งเตือนอื่นๆ ทุกกรณี) แล้วจองใหม่ให้สาขาใหม่ทันที
+async function handleServiceBranchChange({ collected, session, rawMessage, platform, userId, customerName }) {
+  const oldBooking = session.lastServiceBooking;
+  const branches = await store.getActiveBranches();
+
+  // หาสาขาใหม่จากชื่อสาขาที่ปรากฏในข้อความลูกค้าก่อน (ไม่รวมสาขาเดิม กันเคสลูกค้าพิมพ์ทั้งสาขาเดิม+ใหม่ในประโยคเดียวกัน
+  // เช่น "เปลี่ยนสาขาคลองสามเป็นสำนักงานใหญ่" -> ต้องจับ "สำนักงานใหญ่" ไม่ใช่ไปแมตช์ "คลองสาม" ซ้ำ)
+  const options = branches.filter((b) => b.id !== oldBooking.branchId).map((b) => ({ branchId: b.id, branchName: b.name }));
+  let newBranch = matchBranchFromText(rawMessage || "", options);
+
+  if (!newBranch && collected.location_text) {
+    const resolved = await resolveBranchDirect(collected);
+    if (resolved && resolved.id !== oldBooking.branchId) {
+      newBranch = { branchId: resolved.id, branchName: resolved.name };
+    }
+  }
+
+  if (!newBranch) {
+    const names = options.map((o) => o.branchName).join(" หรือ ");
+    return `รบกวนแอดมินขอทราบอีกครั้งนะคะ อยากเปลี่ยนไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+  }
+
+  // ยกเลิกนัดเดิม แจ้งทีมอะไหล่/สาขาเดิมทันที
+  await store.cancelBooking(oldBooking.bookingId);
+  const cancelText =
+    "❌ ยกเลิกนัดซ่อม (ลูกค้าขอเปลี่ยนไปสาขาอื่นแทน)\n" +
+    "สาขาเดิม: " + oldBooking.branchName + "\n" +
+    "Booking ID เดิม: " + oldBooking.bookingId;
+  const oldPartsStaff = oldBooking.partsStaffId ? await store.findStaffById(oldBooking.partsStaffId) : null;
+  const oldBranch = branches.find((b) => b.id === oldBooking.branchId) || { id: oldBooking.branchId, name: oldBooking.branchName };
+  await notifyPartsDirect(oldBranch, oldPartsStaff, cancelText, oldBooking.bookingId);
+
+  // จองใหม่ทันทีที่สาขาใหม่ (ใช้ forcedBranch ตรงๆ ไม่ต้อง geocode ซ้ำ เพราะลูกค้าเพิ่งเจาะจงชื่อสาขามาแล้ว)
+  const newBranchFull = branches.find((b) => b.id === newBranch.branchId);
+  session.locationSetForIntent = "service";
+  session.locationConfirmedForIntent = "service";
+  return handleServiceHandoff({
+    collected,
+    session,
+    platform,
+    userId,
+    customerName,
+    replyContext: null,
+    forcedBranch: newBranchFull,
+  });
 }
 
 function normalizeDate(text) {
