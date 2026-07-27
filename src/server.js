@@ -31,10 +31,25 @@ app.use("/webhook", facebookWebhook);
 app.use("/webhook", lineWebhook);
 
 // ตรวจทุกกี่นาทีว่า lead/booking ไหนพนักงานยังไม่รับทราบเกินเวลาที่กำหนด แล้วแจ้งเตือน
-// เดิมแจ้งแค่หัวหน้าสาขาอย่างเดียว -> แก้ให้แจ้งทั้งเซล/ทีมอะไหล่คนเดิม (เตือนซ้ำ) และหัวหน้าสาขาไปพร้อมกัน
+// แจ้งทั้งเซล/ทีมอะไหล่คนเดิม (เตือนซ้ำ) และหัวหน้าสาขาไปพร้อมกันเสมอ (ครบ 100% ทุกกรณี ไม่มีเคสไหนไม่มีคนตาม)
 // ทั้งคู่ได้ปุ่ม "รับทราบแล้ว" ผูกกับ lead/booking เดียวกัน ใครกดก่อนก็บันทึกเป็นอันนั้น ไม่ปนกับ lead อื่น
 const ESCALATION_THRESHOLD_MIN = 30;
 const ESCALATION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+// เวลาทำการร้าน (ใช้กันไม่ให้แจ้งเตือนตามงาน/เตือนซ้ำไปกวนพนักงานนอกเวลางาน เช่นตอนดึก)
+// จันทร์–เสาร์ 08:00–17:30, อาทิตย์ 09:00–16:00 (ตามข้อมูลเวลาเปิด-ปิดร้านจริงในชีต FAQ)
+// หมายเหตุ: การแจ้งเตือนแรกตอนมี lead/booking ใหม่ยังส่งได้ตลอดเวลา (ลูกค้าทักได้ทุกเมื่อ) — ที่ต้องเว้นเวลาคือ "การเตือนซ้ำ" (escalation) เท่านั้น
+function isBusinessHours(date = new Date()) {
+  // เซิร์ฟเวอร์ Render รันเป็นเวลา UTC เสมอ แปลงเป็นเวลาไทย (UTC+7 ตลอดปี ไม่มี DST) ตรงนี้ก่อนเช็ค
+  const bangkok = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  const day = bangkok.getUTCDay(); // 0 = อาทิตย์, 1-6 = จันทร์-เสาร์
+  const minutesOfDay = bangkok.getUTCHours() * 60 + bangkok.getUTCMinutes();
+
+  if (day === 0) {
+    return minutesOfDay >= 9 * 60 && minutesOfDay < 16 * 60; // อาทิตย์ 09:00–16:00
+  }
+  return minutesOfDay >= 8 * 60 && minutesOfDay < 17 * 60 + 30; // จันทร์–เสาร์ 08:00–17:30
+}
 
 async function notifyEscalation({ refId, branchId, staffName, customerName, modelOrIssue, phone, platform, label }) {
   const branch = await store.getBranchById(branchId);
@@ -71,6 +86,9 @@ async function notifyEscalation({ refId, branchId, staffName, customerName, mode
 }
 
 async function checkEscalations() {
+  // นอกเวลาทำการ -> ยังไม่เตือนซ้ำตอนนี้ รอบถัดไป (ทุก 5 นาที) จะเช็คซ้ำเรื่อยๆ จนกว่าจะเข้าเวลาทำการแล้วค่อยแจ้งทันที
+  // (lead/booking ที่ค้างจะยังไม่ถูก markEscalated ตอนนี้ เลยไม่หลุดจากการตรวจสอบไปไหน)
+  if (!isBusinessHours()) return;
   try {
     const pending = await store.getPendingEscalations(ESCALATION_THRESHOLD_MIN);
     for (const lead of pending) {
@@ -95,8 +113,9 @@ async function checkEscalations() {
   }
 }
 
-// เหมือน checkEscalations แต่ตรวจแท็บ Bookings (นัดซ่อม/ทีมอะไหล่) แทน — เดิมนัดซ่อมไม่มีการ escalate เลย
+// เหมือน checkEscalations แต่ตรวจแท็บ Bookings (นัดซ่อม/ทีมอะไหล่) แทน
 async function checkBookingEscalations() {
+  if (!isBusinessHours()) return;
   try {
     const pending = await store.getPendingBookingEscalations(ESCALATION_THRESHOLD_MIN);
     for (const booking of pending) {
@@ -129,5 +148,5 @@ app.listen(PORT, () => {
   console.log(`Taveesub chatbot server listening on port ${PORT}`);
   console.log(`Facebook webhook: /webhook/facebook`);
   console.log(`LINE webhook: /webhook/line`);
-  console.log(`Escalation check (lead + booking) ทุก ${ESCALATION_CHECK_INTERVAL_MS / 60000} นาที (threshold ${ESCALATION_THRESHOLD_MIN} นาที)`);
+  console.log(`Escalation check (lead + booking) ทุก ${ESCALATION_CHECK_INTERVAL_MS / 60000} นาที (threshold ${ESCALATION_THRESHOLD_MIN} นาที, เฉพาะในเวลาทำการ)`);
 });
