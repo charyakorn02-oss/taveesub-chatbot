@@ -51,17 +51,12 @@ async function getBranchById(id) {
   return branches.find((b) => b.id === id) || null;
 }
 
-// ทุกสาขา ไม่กรอง active (เผื่อใช้เช็คสาขาที่ยังไม่เปิด active)
 async function getAllBranches() {
   const rows = await getRows('Branches');
   return rows.map(rowToObject);
 }
 
 // --- Staff ---
-// ตอนนี้แท็บ Staff เป็นแหล่งข้อมูลเดียวของพนักงานทุกตำแหน่ง แยกด้วยคอลัมน์ role:
-// role = "sales"      -> เซลขายรถ วิ่งคิวขายรถใหม่/เทิร์นรถ
-// role = "parts"      -> ทีมอะไหล่/ช่าง วิ่งคิวนัดซ่อม
-// role = "supervisor" -> หัวหน้าสาขา ใช้เป็นตัวสำรองตอนเซล/ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์ หรือตอบ lead ช้าเกินกำหนด
 async function getActiveStaff() {
   const rows = await getRows('Staff');
   return rows.map(rowToObject).filter((r) => String(r.active).toUpperCase() === 'TRUE');
@@ -72,13 +67,11 @@ async function getStaffForBranch(branchId, role) {
   return staff.filter((s) => s.branchId === branchId && (!role || String(s.role || '').trim() === role));
 }
 
-// หาหัวหน้าสาขา (role=supervisor) ของสาขานั้น ใช้เป็นตัวสำรองเวลาเซล/ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์
 async function getSupervisorForBranch(branchId) {
   const supervisors = await getStaffForBranch(branchId, 'supervisor');
   return supervisors.find((s) => s.lineUserId) || supervisors[0] || null;
 }
 
-// คำนวณระยะห่างระหว่างข้อความ 2 ก้อน (Levenshtein edit distance) เอาไว้เทียบชื่อที่ลูกค้าพิมพ์คลาดเคลื่อนเล็กน้อย
 function levenshtein(a, b) {
   const m = a.length;
   const n = b.length;
@@ -94,7 +87,6 @@ function levenshtein(a, b) {
   return dp[m][n];
 }
 
-// คะแนนความคล้าย 0-1 (1 คือเหมือนกันเป๊ะ) ใช้ตัดสินว่าชื่อที่พิมพ์มาน่าจะพิมพ์ผิดจากชื่อจริงคนไหน
 function nameSimilarity(a, b) {
   if (!a || !b) return 0;
   const maxLen = Math.max(a.length, b.length);
@@ -103,9 +95,6 @@ function nameSimilarity(a, b) {
   return 1 - dist / maxLen;
 }
 
-// หาพนักงานที่ชื่อตรง หรือ "ใกล้เคียง" กับชื่อที่ลูกค้าพิมพ์มา (รองรับพิมพ์ผิด/สะกดคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
-// roleFilter ใส่ 'sales' เพื่อค้นหาเฉพาะเซล (กันไม่ให้ลูกค้าเผลอไปจับคู่กับหัวหน้าสาขา/ทีมอะไหล่)
-// คืนค่าเป็นรายการพนักงานทั้งหมดที่เข้าเกณฑ์ เรียงจากตรงที่สุดก่อน เผื่อกรณีชื่อซ้ำ/คล้ายกันหลายคน
 async function findStaffMatches(name, roleFilter) {
   if (!name) return [];
   let staff = await getActiveStaff();
@@ -137,8 +126,6 @@ async function findStaffById(id) {
   return row ? rowToObject(row) : null;
 }
 
-// พนักงานลงทะเบียน LINE userId ของตัวเอง (ทักบอทด้วยคำว่า "ลงทะเบียน <รหัสพนักงาน> <PIN>")
-// ใช้ได้กับพนักงานทุก role (เซล/ทีมอะไหล่/หัวหน้าสาขา) เพราะทุกคนอยู่ในแท็บ Staff เดียวกันหมดแล้ว
 async function setStaffLineUserId(staffId, lineUserId) {
   const rows = await getRows('Staff');
   const row = rows.find((r) => r.get('id') === staffId);
@@ -148,15 +135,12 @@ async function setStaffLineUserId(staffId, lineUserId) {
   return true;
 }
 
-// เช็คว่า LINE userId นี้เคยถูกผูกไว้กับรหัสพนักงานอื่นไปแล้วหรือยัง (ไม่ว่าจะ role ไหน)
-// ใช้ตอนลงทะเบียนใหม่ทุกครั้ง เพื่อกันไม่ให้ไลน์เดียวไปผูกได้หลายตำแหน่ง (1 คน 1 ตำแหน่งเท่านั้น)
 async function isLineUserIdTaken(lineUserId) {
   if (!lineUserId) return false;
   const staffRows = await getRows('Staff');
   return staffRows.some((r) => r.get('lineUserId') === lineUserId);
 }
 
-// เลือกพนักงานคนถัดไปในคิว "ขายรถใหม่" ของสาขานั้น (เฉพาะ role=sales, งานน้อยสุดก่อน ถ้าเท่ากันดูใครว่างนานสุด)
 async function pickNextInQueue(branchId) {
   const staff = await getStaffForBranch(branchId, 'sales');
   if (staff.length === 0) return null;
@@ -181,8 +165,6 @@ async function incrementOpenLeadsCount(staffId) {
   await row.save();
 }
 
-// เลือกพนักงานคนถัดไปในคิว "เทิร์นรถ" ของสาขานั้น (เฉพาะ role=sales) แยกจากคิวขายรถใหม่โดยเฉพาะ
-// (ใช้คอลัมน์ openTradeInCount / lastAssignedTradeInAt คนละชุดกับ openLeadsCount / lastAssignedAt)
 async function pickNextInTradeInQueue(branchId) {
   const staff = await getStaffForBranch(branchId, 'sales');
   if (staff.length === 0) return null;
@@ -207,8 +189,6 @@ async function incrementOpenTradeInCount(staffId) {
   await row.save();
 }
 
-// เลือกพนักงานคนถัดไปในคิว "นัดซ่อม/อะไหล่" ของสาขานั้น (เฉพาะ role=parts)
-// (ใช้คอลัมน์ openPartsCount / lastAssignedPartsAt แยกต่างหาก)
 async function pickNextInPartsQueue(branchId) {
   const staff = await getStaffForBranch(branchId, 'parts');
   if (staff.length === 0) return null;
@@ -245,8 +225,6 @@ async function getModelList() {
 }
 
 // --- Leads ---
-// สร้าง lead ใหม่ + คืน leadId กลับไป เพื่อเอาไปผูกกับปุ่ม "รับทราบแล้ว" ตอนส่ง LINE หาเซล
-// แท็บ Leads นี้เป็นประวัติย้อนหลังในตัว: ดูได้เลยว่า lead ไหนส่งให้เซลคนไหน วันเวลาไหน รับทราบตอนไหน
 async function appendLead(lead) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Leads'];
@@ -274,7 +252,8 @@ async function appendLead(lead) {
   return leadId;
 }
 
-// เซลกดปุ่ม/พิมพ์รับทราบผ่าน LINE -> บันทึกเวลาที่ตอบกลับ และคำนวณว่าใช้เวลากี่นาที
+// เซล/หัวหน้าสาขา กดปุ่ม/พิมพ์รับทราบผ่าน LINE -> บันทึกเวลาที่ตอบกลับ และคำนวณว่าใช้เวลากี่นาที
+// ทุก lead มี leadId เฉพาะตัวของตัวเอง ต่อให้แจ้งเตือนหลายคน (เซล+หัวหน้าสาขา) การรับทราบก็ยังผูกกับ lead เดียวกันนี้เท่านั้น ไม่ปนกับ lead อื่น
 async function acknowledgeLead(leadId) {
   const rows = await getRows('Leads');
   const row = rows.find((r) => r.get('leadId') === leadId);
@@ -301,7 +280,6 @@ async function acknowledgeLead(leadId) {
   return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
 }
 
-// เอาไว้ให้ job ตรวจสอบเป็นระยะๆ ว่า lead ไหนเซลยังไม่รับทราบเกินเวลาที่กำหนด (นาที) แล้วยังไม่เคยแจ้งหัวหน้ามาก่อน
 async function getPendingEscalations(thresholdMinutes) {
   const rows = await getRows('Leads');
   const now = Date.now();
@@ -324,7 +302,6 @@ async function getPendingEscalations(thresholdMinutes) {
   return pending;
 }
 
-// บันทึกว่า lead นี้ถูกแจ้งเตือนหัวหน้าสาขาไปแล้ว (กันแจ้งซ้ำ)
 async function markLeadEscalated(leadId) {
   const rows = await getRows('Leads');
   const row = rows.find((r) => r.get('leadId') === leadId);
@@ -335,7 +312,8 @@ async function markLeadEscalated(leadId) {
 }
 
 // --- Bookings ---
-// แท็บ Bookings เป็นประวัติย้อนหลังของนัดซ่อม: ดูได้ว่านัดไหนมอบให้ทีมอะไหล่คนไหน วันเวลาไหน
+// แท็บ Bookings มีชุดคอลัมน์รับทราบ (bookingId/notifiedAt/acknowledgedAt/responseTimeMin/escalatedAt) เหมือนแท็บ Leads
+// เพื่อให้นัดซ่อมมีปุ่ม "รับทราบแล้ว" และเข้า job escalation ได้เหมือนกันทุกอย่าง ไม่ใช่แค่ lead ขาย/เทิร์นรถ
 async function getBookingsForBranchDate(branchId, serviceDate) {
   const rows = await getRows('Bookings');
   return rows.map(rowToObject).filter((r) => r.branchId === branchId && r.serviceDate === serviceDate);
@@ -344,8 +322,10 @@ async function getBookingsForBranchDate(branchId, serviceDate) {
 async function appendBooking(booking) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Bookings'];
+  const bookingId = genId('BK');
+  const now = new Date().toISOString();
   await sheet.addRow({
-    createdAt: new Date().toISOString(),
+    createdAt: now,
     platform: booking.platform || '',
     customerId: booking.customerId || '',
     branchId: booking.branchId || '',
@@ -355,7 +335,73 @@ async function appendBooking(booking) {
     status: booking.status || 'new',
     staffName: booking.staffName || '',
     staffPhone: booking.staffPhone || '',
+    customerName: booking.customerName || '',
+    bookingId,
+    notifiedAt: now,
+    acknowledgedAt: '',
+    responseTimeMin: '',
+    escalatedAt: '',
   });
+  return bookingId;
+}
+
+// ทีมอะไหล่/หัวหน้าสาขา กดปุ่มรับทราบนัดซ่อม -> เหมือน acknowledgeLead แต่ทำงานกับแท็บ Bookings
+async function acknowledgeBooking(bookingId) {
+  const rows = await getRows('Bookings');
+  const row = rows.find((r) => r.get('bookingId') === bookingId);
+  if (!row) return null;
+
+  if (row.get('acknowledgedAt')) {
+    return {
+      staffName: row.get('staffName'),
+      responseTimeMin: row.get('responseTimeMin'),
+      alreadyAcknowledged: true,
+    };
+  }
+
+  const notifiedAt = row.get('notifiedAt');
+  const now = new Date();
+  const diffMin = notifiedAt ? (now.getTime() - new Date(notifiedAt).getTime()) / 60000 : null;
+  const diffStr = diffMin !== null ? diffMin.toFixed(1) : '';
+
+  row.set('acknowledgedAt', now.toISOString());
+  row.set('responseTimeMin', diffStr);
+  row.set('status', 'acknowledged');
+  await row.save();
+
+  return { staffName: row.get('staffName'), responseTimeMin: diffStr, alreadyAcknowledged: false };
+}
+
+// เหมือน getPendingEscalations แต่ตรวจแท็บ Bookings (นัดซ่อม/ทีมอะไหล่) แทน
+async function getPendingBookingEscalations(thresholdMinutes) {
+  const rows = await getRows('Bookings');
+  const now = Date.now();
+  const pending = [];
+
+  for (const row of rows) {
+    const obj = rowToObject(row);
+    if (!obj.notifiedAt) continue;
+    if (obj.acknowledgedAt) continue;
+    if (obj.escalatedAt) continue;
+
+    const notifiedTime = new Date(obj.notifiedAt).getTime();
+    if (Number.isNaN(notifiedTime)) continue;
+
+    const diffMin = (now - notifiedTime) / 60000;
+    if (diffMin >= thresholdMinutes) {
+      pending.push(obj);
+    }
+  }
+  return pending;
+}
+
+async function markBookingEscalated(bookingId) {
+  const rows = await getRows('Bookings');
+  const row = rows.find((r) => r.get('bookingId') === bookingId);
+  if (!row) return false;
+  row.set('escalatedAt', new Date().toISOString());
+  await row.save();
+  return true;
 }
 
 module.exports = {
@@ -383,4 +429,7 @@ module.exports = {
   markLeadEscalated,
   getBookingsForBranchDate,
   appendBooking,
+  acknowledgeBooking,
+  getPendingBookingEscalations,
+  markBookingEscalated,
 };
