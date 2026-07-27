@@ -14,6 +14,17 @@ function containsHighIntentKeyword(text) {
   return HIGH_INTENT_KEYWORDS.some((k) => text.includes(k));
 }
 
+// เดาหมวดจากคำสำคัญในข้อความดิบของลูกค้า ใช้เป็น "ตาข่ายนิรภัย" ตอน handoff เท่านั้น
+// (เช่น เจอ high_intent_keyword อย่าง "จอง" จนต้อง handoff ทันที แต่รอบนั้น Claude ดันจัดหมวด intent_category ไม่สำเร็จ/ส่งมาว่าง
+// เพราะ JSON parse ผิดพลาดชั่วคราว หรือข้อความที่ batch รวมมาดูสับสน) กันไม่ให้เคสชัดเจนอย่าง "ซ่อม/อะไหล่" หลุดไปเป็น general เฉยๆ
+function guessIntentFromText(text) {
+  if (!text) return null;
+  if (/ซ่อม|เช็คระยะ|อะไหล่|คิวซ่อม|นัดซ่อม|เข้าศูนย์/.test(text)) return "service";
+  if (/เทิร์นรถ|เทิร์น|แลกรถ|ขายรถเก่า/.test(text)) return "trade_in";
+  if (/ซื้อรถ|ออกรถ|จองรถ|ดาวน์รถ|สนใจรุ่น/.test(text)) return "buying_new";
+  return null;
+}
+
 // พอลูกค้าบอกที่อยู่มาปุ๊บ (เฉพาะซื้อรถใหม่ ยังไม่ได้ระบุชื่อเซล ยังไม่ได้เลือกวิธีรับรถ) ให้รีบค้นหาสาขาที่ใกล้ที่สุดจริงๆ
 // ด้วย Google Maps ทันที แทนที่จะให้ Claude เดาเองว่าอยู่ในเขตบริการไหม/สาขาไหนใกล้สุด ช่วยให้แม่นยำและไม่ต้องรอจนขั้นตอนสุดท้าย
 // ทำครั้งเดียวต่อ session (เก็บ flag session.locationBranchIntroDone กันถามซ้ำ/แนะนำซ้ำ)
@@ -75,7 +86,26 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
-  const highIntent = containsHighIntentKeyword(rawMessage);
+  // เคสเปลี่ยนหัวข้อคุยมาเป็น "ซ่อมรถ" หรือ "เทิร์นรถ" (ทั้งคู่ต้องให้ลูกค้ามาที่สาขาจริงๆ ไม่ใช่จัดส่ง)
+  // แต่ที่อยู่ (location_text) ที่มีอยู่ตอนนี้อาจเป็นของหัวข้ออื่นที่คุยไว้ก่อนหน้าในเซสชันเดียวกัน (เช่น เคยบอกไว้ตอนถามซื้อรถ)
+  // ห้ามเอาที่อยู่เก่ามาผูกสาขาให้เงียบๆ เพราะลูกค้าอาจสะดวกคนละที่ (เช่น ให้จัดส่งรถที่บ้าน แต่จะนำรถเข้าซ่อมที่ใกล้ที่ทำงานแทน)
+  // ต้องถามย้ำให้ลูกค้ายืนยัน/แก้ที่อยู่ก่อนครั้งเดียวต่อการเปลี่ยนหัวข้อ แล้วค่อยปล่อยให้ flow ปกติหาสาขาต่อ
+  const needsBranchVisit = collected.intent_category === "service" || collected.intent_category === "trade_in";
+  if (needsBranchVisit && collected.location_text && session.locationConfirmedForIntent !== collected.intent_category) {
+    if (session.pendingLocationReconfirmIntent === collected.intent_category) {
+      // รอบนี้คือคำตอบของคำถามยืนยันที่อยู่ที่เพิ่งถามไป ไม่ว่าลูกค้าจะตอบว่าเหมือนเดิม หรือบอกที่ใหม่มา (ระบบ merge เป็น location_text ให้แล้วด้านบน)
+      // ถือว่ายืนยันแล้ว เคลียร์ flag แล้วปล่อยให้ flow ปกติทำงานต่อจากตรงนี้ในเทิร์นเดียวกันได้เลย
+      session.pendingLocationReconfirmIntent = null;
+      session.locationConfirmedForIntent = collected.intent_category;
+    } else {
+      session.pendingLocationReconfirmIntent = collected.intent_category;
+      session.fallbackCount = 0;
+      const actionLabel = collected.intent_category === "trade_in" ? "นำรถเข้ามาที่สาขา" : "นำรถเข้ารับบริการที่สาขา";
+      return `แอดมินเห็นว่าก่อนหน้านี้พี่แจ้งพื้นที่ไว้ว่า "${collected.location_text}" ค่ะ 😊 ยังสะดวก${actionLabel}แถวนั้นเหมือนเดิมไหมคะ หรือจะเปลี่ยนพื้นที่ใหม่บอกแอดมินได้เลยนะคะ`;
+    }
+  }
+
+  const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage);
 
   // กันเหนียว: ถึง Claude จะบอกว่า data_complete = true ก็ตาม ห้าม handoff จริงถ้ายังไม่มีเบอร์โทรลูกค้าเก็บไว้เลย
   // (ป้องกันเคส Claude วิเคราะห์ผิดพลาดแล้วส่ง lead ที่ไม่มีเบอร์/ที่อยู่ให้เซลไปโดยไม่ได้ตั้งใจ)
@@ -99,7 +129,13 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 }
 
 async function performHandoff({ collected, session, rawMessage, platform, userId, customerName, replyContext, highIntent }) {
-  const intent = collected.intent_category || "general";
+  // ถ้า Claude ไม่ได้จัดหมวดไว้เลย (เช่น รอบนี้ JSON หลุด/ไม่มั่นใจ) แต่ต้อง handoff แล้วเพราะเจอ high_intent_keyword
+  // ให้เดาหมวดจากคำในข้อความดิบก่อน กันเคสชัดเจนอย่าง "ซ่อม/อะไหล่/จองคิว" หลุดไปเป็น general เฉยๆ ทั้งที่ควรเข้าคิวช่าง
+  const intent = collected.intent_category || guessIntentFromText(rawMessage) || "general";
+  if (intent !== collected.intent_category) {
+    collected.intent_category = intent;
+  }
+
   if (intent === "buying_new" || intent === "trade_in") {
     return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent });
   }
@@ -447,9 +483,8 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
   }
   if (!assignedBranch) {
-    // แก้บั๊ก: เดิม fallback ไปที่ branches[0] เฉยๆ (แถวแรกในชีต Branches) ทำให้ลูกค้าที่อยู่นอกเขตบริการ (เช่น
-    // ยังมี location_text เก่าจากหัวข้ออื่นในเซสชันเดียวกันค้างอยู่ เช่นเคยบอกที่อยู่ไว้ตอนถามซื้อรถ) โดนส่งไปสาขาแรกในชีตแบบสุ่มๆ
-    // (บังเอิญคือสาขารังสิต-คลอง3 เพราะเป็นแถวบนสุด) แก้ให้ fallback ไปสำนักงานใหญ่เหมือนฟังก์ชันอื่นๆ ในไฟล์นี้ทั้งหมด
+    // เดิม fallback ไปที่ branches[0] เฉยๆ (แถวแรกในชีต Branches) ทำให้ลูกค้าที่อยู่นอกเขตบริการโดนส่งไปสาขาแรกในชีตแบบสุ่มๆ
+    // แก้ให้ fallback ไปสำนักงานใหญ่เหมือนฟังก์ชันอื่นๆ ในไฟล์นี้ทั้งหมด
     assignedBranch = branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
   }
   if (!assignedBranch) {
