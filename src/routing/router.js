@@ -14,6 +14,33 @@ function containsHighIntentKeyword(text) {
   return HIGH_INTENT_KEYWORDS.some((k) => text.includes(k));
 }
 
+// พอลูกค้าบอกที่อยู่มาปุ๊บ (เฉพาะซื้อรถใหม่ ยังไม่ได้ระบุชื่อเซล ยังไม่ได้เลือกวิธีรับรถ) ให้รีบค้นหาสาขาที่ใกล้ที่สุดจริงๆ
+// ด้วย Google Maps ทันที แทนที่จะให้ Claude เดาเองว่าอยู่ในเขตบริการไหม/สาขาไหนใกล้สุด ช่วยให้แม่นยำและไม่ต้องรอจนขั้นตอนสุดท้าย
+// ทำครั้งเดียวต่อ session (เก็บ flag session.locationBranchIntroDone กันถามซ้ำ/แนะนำซ้ำ)
+async function introduceNearestBranches(locationText) {
+  const branches = await store.getActiveBranches();
+  const geo = locationText ? await geocode(locationText) : null;
+
+  if (geo && isServiceArea(geo.province)) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    const top2 = ranked.slice(0, 2).map((r) => r.branch);
+    if (top2.length === 0) return null;
+
+    if (top2.length === 1) {
+      return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 สาขาที่ใกล้พี่ที่สุดคือ ${top2[0].name} ค่ะ พี่สะดวกมารับที่สาขานี้เอง หรือสนใจให้จัดส่งถึงบ้านดีคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
+    }
+    const names = top2.map((b) => b.name).join(" หรือ ");
+    return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุดมี 2 สาขาเลยคือ ${names} พี่สะดวกไปสาขาไหนดีคะ หรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
+  }
+
+  // นอกเขตบริการจริงๆ หรือหาพิกัดไม่ได้ (พิมพ์มาไม่ชัดเจน/geocode ล้มเหลว) -> ไม่เดาสาขา ให้สนญ. ดูแลแทน
+  return "เข้าใจแล้วค่ะ พื้นที่ของพี่ทางสำนักงานใหญ่จะเป็นผู้ประสานงานดูแลให้นะคะ (ทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ) ขอทราบชื่อ-เบอร์ติดต่อกลับได้ไหมคะ 😊";
+}
+
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   const collected = session.collected;
   const fieldsToMerge = [
@@ -31,6 +58,22 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       collected[f] = analysis[f];
     }
   });
+
+  // เช็คทันทีที่มีที่อยู่ลูกค้าแล้ว (เฉพาะซื้อรถใหม่ ไม่มีชื่อเซลที่ระบุ ยังไม่ได้เลือกวิธีรับรถ) -> ค้นสาขาใกล้สุดจริงจาก Google Maps เลย
+  if (
+    collected.intent_category === "buying_new" &&
+    collected.location_text &&
+    !collected.requested_staff_name &&
+    !collected.delivery_preference &&
+    !session.locationBranchIntroDone
+  ) {
+    const introReply = await introduceNearestBranches(collected.location_text);
+    if (introReply) {
+      session.locationBranchIntroDone = true;
+      session.fallbackCount = 0;
+      return introReply;
+    }
+  }
 
   const highIntent = containsHighIntentKeyword(rawMessage);
 
@@ -269,7 +312,7 @@ async function resolveBranchDirect(collected) {
 async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessage }) {
   const branches = await store.getActiveBranches();
 
-  // รอบก่อนเคยแนะนำ 2 สาขาให้เลือกไว้ -> รอบนี้เช็คว่าลูกค้าเลือกสาขาไหน
+  // รอบก่อนเคยแนะนำ 2 สาขาให้เลือกไว้ (จากขั้นตอน introduceNearestBranches หรือจากรอบนี้เอง) -> รอบนี้เช็คว่าลูกค้าเลือกสาขาไหน
   if (session.pendingBranchChoiceIds && session.pendingBranchChoiceIds.length > 0) {
     const candidates = session.pendingBranchChoiceIds
       .map((id) => branches.find((b) => b.id === id))
