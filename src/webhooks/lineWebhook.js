@@ -45,12 +45,10 @@ async function handleLineText(event) {
   const text = (event.message.text || "").trim();
   const replyToken = event.replyToken;
 
-  // ---- flow ลงทะเบียนพนักงาน (ใช้ร่วมกันทุกตำแหน่ง: เซล/ทีมอะไหล่/หัวหน้าสาขา) ----
   if (text.startsWith(REGISTER_KEYWORD)) {
     return handleStaffRegister(event, userId, text, replyToken);
   }
 
-  // ---- flow ปกติ: คุยกับลูกค้า ผ่าน Claude ----
   const session = getSession("line", userId);
   if (session.handedOff) return;
 
@@ -59,7 +57,6 @@ async function handleLineText(event) {
     session.history.push({ role: "user", content: text });
     session.history.push({ role: "assistant", content: JSON.stringify(analysis) });
 
-    // ดึงชื่อ LINE ของลูกค้า เก็บไว้ครั้งเดียวใน session กันเรียก API ซ้ำทุกข้อความ
     if (!session.customerName) {
       session.customerName = await line.getProfile(userId);
     }
@@ -82,13 +79,11 @@ async function handleLineText(event) {
   }
 }
 
-// แยกข้อความหลังคำสั่งลงทะเบียนออกเป็น [รหัส, PIN] เช่น "staff1 4173" -> ["staff1","4173"]
 function parseIdAndPin(remainder) {
   const parts = remainder.trim().split(/\s+/).filter(Boolean);
   return { id: parts[0] || "", pin: parts[1] || "" };
 }
 
-// ป้ายชื่อ role ให้อ่านง่ายเป็นภาษาไทย ใช้แสดงในข้อความยืนยันหลังลงทะเบียนสำเร็จ
 function roleLabelTh(role) {
   if (role === "sales") return "เซล";
   if (role === "parts") return "ทีมอะไหล่";
@@ -96,7 +91,6 @@ function roleLabelTh(role) {
   return role || "พนักงาน";
 }
 
-// ใช้ได้กับพนักงานทุกตำแหน่ง (เซล/ทีมอะไหล่/หัวหน้าสาขา) เพราะทุกคนอยู่ในแท็บ Staff เดียวกันหมดแล้ว
 async function handleStaffRegister(event, userId, text, replyToken) {
   const { id: staffId, pin } = parseIdAndPin(text.replace(REGISTER_KEYWORD, ""));
   if (!staffId || !pin) {
@@ -106,13 +100,13 @@ async function handleStaffRegister(event, userId, text, replyToken) {
   try {
     const staff = await store.findStaffById(staffId);
     if (!staff) {
-      await line.replyMessage(replyToken, `ไม่พบรหัส "${staffId}" ในระบบ รบกวนเช็ครหัสในชีต Staff อีกครั้งนะคะ`);
+      await line.replyMessage(replyToken, "ไม่พบรหัส \"" + staffId + "\" ในระบบ รบกวนเช็ครหัสในชีต Staff อีกครั้งนะคะ");
       return;
     }
     if (staff.lineUserId) {
       await line.replyMessage(
         replyToken,
-        `รหัส "${staffId}" นี้เคยลงทะเบียนไลน์ไปแล้วนะคะ ถ้าต้องการเปลี่ยนไลน์ใหม่ รบกวนให้ผู้จัดการ/แอดมินล้างค่าในชีต Staff ให้ก่อนนะคะ`
+        "รหัส \"" + staffId + "\" นี้เคยลงทะเบียนไลน์ไปแล้วนะคะ ถ้าต้องการเปลี่ยนไลน์ใหม่ รบกวนให้ผู้จัดการ/แอดมินล้างค่าในชีต Staff ให้ก่อนนะคะ"
       );
       return;
     }
@@ -131,7 +125,7 @@ async function handleStaffRegister(event, userId, text, replyToken) {
     const roleLabel = roleLabelTh(staff.role);
     await line.replyMessage(
       replyToken,
-      `ลงทะเบียนสำเร็จค่ะ คุณ ${staff.name} (${roleLabel}) ✅ ต่อไปนี้ระบบจะส่งแจ้งเตือนที่เกี่ยวข้องมาที่ไลน์นี้โดยตรงนะคะ`
+      "ลงทะเบียนสำเร็จค่ะ คุณ " + staff.name + " (" + roleLabel + ") ✅ ต่อไปนี้ระบบจะส่งแจ้งเตือนที่เกี่ยวข้องมาที่ไลน์นี้โดยตรงนะคะ"
     );
   } catch (err) {
     console.error("[lineWebhook] handleStaffRegister error:", err.message);
@@ -141,28 +135,32 @@ async function handleStaffRegister(event, userId, text, replyToken) {
   }
 }
 
-// เซลกดปุ่ม "รับทราบแล้ว" ใน quick reply -> บันทึกเวลาที่ตอบกลับ และเวลาที่ใช้ตั้งแต่แจ้งเตือน
+// เซล/ทีมอะไหล่/หัวหน้าสาขา กดปุ่ม "รับทราบแล้ว" -> บันทึกเวลาที่ตอบกลับ
+// รองรับทั้ง lead (ขาย/เทิร์นรถ/ทั่วไป ขึ้นต้น LD-) และ booking (นัดซ่อม ขึ้นต้น BK-) เพราะใช้ปุ่มเดียวกัน (data = "ack:<id>")
+// แยกว่าจะรับทราบฝั่งไหนจาก prefix ของ id เอง
 async function handlePostback(event) {
   const data = event.postback && event.postback.data;
   if (!data || !data.startsWith("ack:")) return;
 
-  const leadId = data.slice(4);
+  const refId = data.slice(4);
+  const isBooking = refId.startsWith("BK-");
+
   try {
-    const result = await store.acknowledgeLead(leadId);
+    const result = isBooking ? await store.acknowledgeBooking(refId) : await store.acknowledgeLead(refId);
     if (!result) {
-      await line.pushMessage(event.source.userId, "ไม่พบ lead นี้ในระบบแล้วนะคะ (อาจถูกบันทึกไปแล้ว)");
+      await line.pushMessage(event.source.userId, "ไม่พบรายการนี้ในระบบแล้วนะคะ (อาจถูกบันทึกไปแล้ว)");
       return;
     }
     if (result.alreadyAcknowledged) {
       await line.pushMessage(
         event.source.userId,
-        `รับทราบแล้วก่อนหน้านี้นะคะ (ใช้เวลา ${result.responseTimeMin} นาที)`
+        "รับทราบแล้วก่อนหน้านี้นะคะ (ใช้เวลา " + result.responseTimeMin + " นาที)"
       );
       return;
     }
     await line.pushMessage(
       event.source.userId,
-      `บันทึกแล้วค่ะ ✅ รับทราบ lead ภายใน ${result.responseTimeMin} นาที ขอบคุณนะคะ`
+      "บันทึกแล้วค่ะ ✅ รับทราบภายใน " + result.responseTimeMin + " นาที ขอบคุณนะคะ"
     );
   } catch (err) {
     console.error("[lineWebhook] handlePostback error:", err.message);
