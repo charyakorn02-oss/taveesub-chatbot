@@ -86,7 +86,12 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
-    return analysis.reply_text_to_customer || "ขอบคุณที่ทักมานะคะ แอดมินขอสอบถามเพิ่มเติมนิดนึงนะคะ พี่สนใจรุ่นไหน หรืออยากนัดซ่อมแบบไหนคะ";
+    // ห้ามใช้ข้อความ default ที่ถามซ้ำเรื่องที่ลูกค้าตอบไปแล้ว (เช่นถามรุ่น/ถามที่อยู่ซ้ำ) เพราะ Claude อาจส่ง reply_text_to_customer
+    // ว่างมาชั่วคราว (JSON parse ได้แต่ field นี้หลุด) -> ใช้ข้อความกลางๆ ที่ไม่ขัดกับบริบทที่คุยไปแล้วแทน
+    return (
+      analysis.reply_text_to_customer ||
+      "ขอบคุณที่บอกแอดมินนะคะ 😊 รบกวนแอดมินขอทราบข้อมูลอีกนิดนะคะ พี่พิมพ์อีกครั้งได้ไหมคะ 🙏"
+    );
   }
 
   session.fallbackCount = 0;
@@ -101,7 +106,9 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
   if (intent === "service") {
     return handleServiceHandoff({ collected, platform, userId, customerName, replyContext });
   }
-  return "แอดมินรับเรื่องไว้แล้วนะคะ เดี๋ยวให้ทีมงานติดต่อกลับไปนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
+  // general / ไม่รู้จะตอบยังไง (เช่น Claude ตอบไม่มั่นใจ ถามซ้ำจน fallback ครบ หรือลูกค้าขอคุยกับคนจริงแบบไม่เจาะจงหมวด)
+  // ก่อนหน้านี้เคสนี้แค่ตอบลูกค้าเฉยๆ ไม่มีการสร้าง lead หรือแจ้งพนักงานเลย ทำให้เรื่องหลุดไปเงียบๆ -> แก้ให้สร้าง lead จริงและแจ้งหัวหน้าสาขาเสมอ
+  return handleGeneralHandoff({ collected, rawMessage, platform, userId, customerName });
 }
 
 // เอาชื่อสาขาไปหาว่าลูกค้าตอบกลับมาตรงกับตัวเลือกไหน (ใช้ตอนก่อนหน้าเคยถามลูกค้าว่า "สะดวกสาขาไหน" ไปแล้ว)
@@ -119,6 +126,72 @@ function matchBranchFromText(text, options) {
 // ถ้ายังไม่มีค่อย fallback ไปใช้ชื่อโปรไฟล์ไลน์ (customerName ที่ดึงมาอัตโนมัติ)
 function resolveCustomerName(collected, customerName) {
   return collected.customer_name || customerName || "";
+}
+
+// หาสาขาที่เหมาะสมให้เคส general (ใช้ location_text ถ้ามี ไม่งั้น fallback ไปสำนักงานใหญ่)
+async function resolveGeneralBranch(collected) {
+  const branches = await store.getActiveBranches();
+  const geo = collected.location_text ? await geocode(collected.location_text) : null;
+  if (geo && isServiceArea(geo.province)) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    if (ranked.length > 0) return ranked[0].branch;
+  }
+  return branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+}
+
+// เคส "ไม่รู้จะตอบยังไง" / ถามซ้ำจนครบ fallback / นอกขอบเขตแต่ลูกค้าขอคุยกับคน -> ต้องมี lead จริงให้พนักงานเห็นเสมอ ห้ามเงียบหาย
+async function handleGeneralHandoff({ collected, rawMessage, platform, userId, customerName }) {
+  const finalCustomerName = resolveCustomerName(collected, customerName);
+  const branch = await resolveGeneralBranch(collected);
+
+  if (!branch) {
+    return "แอดมินรับเรื่องไว้แล้วนะคะ เดี๋ยวให้ทีมงานติดต่อกลับไปนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
+  }
+
+  const lead = {
+    platform,
+    customerId: userId,
+    customerName: finalCustomerName,
+    intentCategory: "general",
+    modelOrIssue: collected.model_or_issue || rawMessage || "(คำถามที่แอดมินตอบเองไม่ได้ ดูข้อความลูกค้าประกอบ)",
+    branchId: branch.id,
+    staffName: "",
+    staffPhone: "",
+    phone: collected.phone || null,
+    locationText: collected.location_text || null,
+    status: "new",
+  };
+  const leadId = await store.appendLead(lead);
+  try {
+    await bitrix24.createLead({ ...lead, id: leadId });
+  } catch (err) {
+    console.error("[router] bitrix24.createLead (general) error:", err.message);
+  }
+
+  const notifyText =
+    "❓ เรื่องที่แอดมิน (บอท) ตอบเองไม่ได้ (" + platform + ")\n" +
+    (finalCustomerName ? "ชื่อลูกค้า: " + finalCustomerName + "\n" : "") +
+    "สาขาที่ใกล้ลูกค้า: " + branch.name + "\n" +
+    "คำถาม/ข้อความล่าสุดจากลูกค้า: " + (collected.model_or_issue || rawMessage || "-") + "\n" +
+    "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    "Lead ID: " + leadId;
+
+  // เคส general ไม่มีเซล/ทีมอะไหล่เจาะจงรับผิดชอบ ให้แจ้งหัวหน้าสาขาโดยตรงเลย พร้อมปุ่มรับทราบ
+  const supervisor = await store.getSupervisorForBranch(branch.id);
+  if (supervisor && supervisor.lineUserId) {
+    try {
+      await line.pushMessageWithAck(supervisor.lineUserId, notifyText, leadId);
+    } catch (err) {
+      console.error("[router] handleGeneralHandoff notify supervisor error:", err.message);
+    }
+  } else {
+    console.warn(`[router] สาขา ${branch.id} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, notifyText);
+  }
+
+  return "แอดมินรับเรื่องไว้แล้วนะคะ 😊 เดี๋ยวให้ทีมงานที่ดูแลเรื่องนี้ช่วยตอบละเอียดอีกทีนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
 }
 
 async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent }) {
@@ -397,8 +470,9 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     status: "new",
     staffName: assignedPartsStaff ? assignedPartsStaff.name : "",
     staffPhone: assignedPartsStaff ? assignedPartsStaff.phone : "",
+    customerName: finalCustomerName,
   };
-  await store.appendBooking(booking);
+  const bookingId = await store.appendBooking(booking);
 
   const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
   const notifyText =
@@ -408,9 +482,10 @@ async function handleServiceHandoff({ collected, platform, userId, customerName,
     "วันที่นัด: " + (dateStr || "ยังไม่ระบุ") + "\n" +
     "รุ่นรถ/อาการ: " + (collected.model_or_issue || "-") + "\n" +
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
-    "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยนะคะ)";
+    "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยนะคะ)\n" +
+    "Booking ID: " + bookingId;
 
-  await notifyPartsDirect(assignedBranch, assignedPartsStaff, notifyText);
+  await notifyPartsDirect(assignedBranch, assignedPartsStaff, notifyText, bookingId);
 
   const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
   const partsAddLineNote = assignedPartsStaff && assignedPartsStaff.lineAddUrl
@@ -426,8 +501,8 @@ function normalizeDate(text) {
   return m ? m[0] : "";
 }
 
-// ส่งแจ้งเตือน Lead ตรงถึงไลน์ส่วนตัวเซล ถ้าเซลยังไม่ได้ลงทะเบียนไลน์
-// ให้ fallback ไปแจ้งหัวหน้าสาขา (role=supervisor ในแท็บ Staff) แทนทันที
+// ส่งแจ้งเตือน Lead ตรงถึงไลน์ส่วนตัวเซล พร้อมปุ่ม "รับทราบแล้ว" (ผูกกับ leadId) ถ้าเซลยังไม่ได้ลงทะเบียนไลน์
+// ให้ fallback ไปแจ้งหัวหน้าสาขา (role=supervisor ในแท็บ Staff) แทนทันที (พร้อมปุ่มรับทราบเช่นกัน ผูกกับ leadId เดียวกัน)
 async function notifyStaffDirect(staff, text, leadId) {
   if (staff.lineUserId) {
     try {
@@ -442,7 +517,7 @@ async function notifyStaffDirect(staff, text, leadId) {
   const supervisor = await store.getSupervisorForBranch(staff.branchId);
   if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessage(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + text);
+      await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + text, leadId);
       return;
     } catch (err) {
       console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
@@ -452,15 +527,15 @@ async function notifyStaffDirect(staff, text, leadId) {
   }
 }
 
-// ส่งแจ้งเตือนนัดซ่อมตรงถึงไลน์ส่วนตัวทีมอะไหล่ที่ถูกเลือกจากคิว (role=parts)
-// ถ้าคนนั้นยังไม่ได้ลงทะเบียนไลน์ หรือสาขานั้นไม่มีทีมอะไหล่เลย ให้ fallback ไปแจ้งหัวหน้าสาขาแทนทันที
-async function notifyPartsDirect(branch, partsStaff, text) {
+// ส่งแจ้งเตือนนัดซ่อมตรงถึงไลน์ส่วนตัวทีมอะไหล่ที่ถูกเลือกจากคิว (role=parts) พร้อมปุ่ม "รับทราบแล้ว" (ผูกกับ bookingId)
+// ถ้าคนนั้นยังไม่ได้ลงทะเบียนไลน์ หรือสาขานั้นไม่มีทีมอะไหล่เลย ให้ fallback ไปแจ้งหัวหน้าสาขาแทนทันที (พร้อมปุ่มรับทราบเช่นกัน)
+async function notifyPartsDirect(branch, partsStaff, text, bookingId) {
   if (partsStaff && partsStaff.lineUserId) {
     try {
-      await line.pushMessage(partsStaff.lineUserId, text);
+      await line.pushMessageWithAck(partsStaff.lineUserId, text, bookingId);
       return;
     } catch (err) {
-      console.error("[router] notifyPartsDirect pushMessage error:", err.message);
+      console.error("[router] notifyPartsDirect pushMessageWithAck error:", err.message);
     }
   } else if (partsStaff) {
     console.warn(`[router] ทีมอะไหล่ ${partsStaff.name} (${partsStaff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
@@ -470,7 +545,7 @@ async function notifyPartsDirect(branch, partsStaff, text) {
   const supervisor = await store.getSupervisorForBranch(branch.id);
   if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessage(supervisor.lineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text);
+      await line.pushMessageWithAck(supervisor.lineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + text, bookingId);
       return;
     } catch (err) {
       console.error("[router] notifyPartsDirect supervisor fallback error:", err.message);
