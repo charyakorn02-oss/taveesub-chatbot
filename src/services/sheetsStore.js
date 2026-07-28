@@ -466,6 +466,7 @@ async function getPendingRefsForStaff(staffName, branchId, excludeId) {
     .map(rowToObject)
     .filter(
       (r) =>
+        r.leadId && // กันแถวที่ไม่มีเลขที่ leadId (เช่น แถวว่าง/ข้อมูลตกหล่นในชีต) หลุดเข้ามาแล้วทำให้ acknowledgeAndReply พังตอน .startsWith()
         r.staffName === staffName &&
         r.branchId === branchId &&
         !r.acknowledgedAt &&
@@ -485,6 +486,7 @@ async function getPendingRefsForStaff(staffName, branchId, excludeId) {
     .map(rowToObject)
     .filter(
       (r) =>
+        r.bookingId && // กันแถวที่ไม่มีเลขที่ bookingId เหมือนกับฝั่ง lead ด้านบน
         r.staffName === staffName &&
         r.branchId === branchId &&
         !r.acknowledgedAt &&
