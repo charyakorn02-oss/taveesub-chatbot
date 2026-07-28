@@ -23,7 +23,9 @@ const ACK_TEXT_PATTERN = /^รับทราบ(?:แล้ว)?\s*#?\s*(\d+)?$
 // รอลูกค้าพิมพ์ให้ครบก่อนค่อยประมวลผล+ตอบทีเดียว กันเคสลูกค้าพิมพ์แยกเป็นหลายข้อความติดกัน
 // (เช่น พิมพ์ทีละประโยค) แล้วบอทตอบสวนทุกข้อความจนดูงงๆ/ตอบไม่ตรงบริบท
 // ทุกครั้งที่มีข้อความใหม่เข้ามาจากคนเดิม จะรีเซ็ตตัวจับเวลาใหม่ ถ้าเงียบไปครบเวลานี้แล้วค่อยรวมข้อความทั้งหมดส่งไปวิเคราะห์ทีเดียว
-const BATCH_WAIT_MS = 60 * 1000; // ~1 นาที ตามที่ร้านต้องการ ปรับได้ตรงนี้จุดเดียว
+// ข้อความแรกสุดของ batch รอ 20 วิ (ให้เวลาลูกค้าพิมพ์ประโยคต่อได้ทัน) ส่วนข้อความถัดๆ ไปในรอบเดียวกันรอแค่ 10 วิพอ (ลูกค้าน่าจะพิมพ์ใกล้จะจบแล้ว)
+const FIRST_BATCH_WAIT_MS = 20 * 1000;
+const SUBSEQUENT_BATCH_WAIT_MS = 10 * 1000;
 const pendingBatches = new Map(); // key = LINE userId -> { texts: string[], timer }
 
 // LINE ต้องการ raw body สำหรับตรวจลายเซ็น (เพิ่ม middleware เฉพาะ route นี้ใน server.js แล้ว)
@@ -73,7 +75,9 @@ async function handleLineText(event) {
   const session = await getSession("line", userId);
   if (session.handedOff) return;
 
-  scheduleBatchedReply(userId);
+  const existingBatch = pendingBatches.get(userId);
+  const isFirstMessage = !existingBatch || existingBatch.texts.length === 0;
+  scheduleBatchedReply(userId, isFirstMessage);
   let batch = pendingBatches.get(userId);
   if (!batch) {
     batch = { texts: [] };
@@ -88,15 +92,17 @@ async function handleLineText(event) {
   });
 }
 
-// รีเซ็ตตัวจับเวลาทุกครั้งที่มีข้อความใหม่เข้ามาจากลูกค้าคนเดิม ถ้าเงียบไปครบ BATCH_WAIT_MS ค่อยประมวลผลรวมทีเดียว
-function scheduleBatchedReply(userId) {
+// รีเซ็ตตัวจับเวลาทุกครั้งที่มีข้อความใหม่เข้ามาจากลูกค้าคนเดิม ถ้าเงียบไปครบเวลาที่กำหนดแล้วค่อยประมวลผลรวมทีเดียว
+// isFirstMessage = true ตอนเป็นข้อความแรกของ batch นี้ (รอ 20 วิ) ส่วนข้อความถัดๆ ไปรอแค่ 10 วิ (ดูค่าคงที่ด้านบน)
+function scheduleBatchedReply(userId, isFirstMessage) {
   const existing = pendingBatches.get(userId);
   if (existing && existing.timer) {
     clearTimeout(existing.timer);
   }
+  const waitMs = isFirstMessage ? FIRST_BATCH_WAIT_MS : SUBSEQUENT_BATCH_WAIT_MS;
   const timer = setTimeout(() => {
     flushBatch(userId).catch((err) => console.error("[lineWebhook] flushBatch error:", err.message));
-  }, BATCH_WAIT_MS);
+  }, waitMs);
 
   if (existing) {
     existing.timer = timer;
