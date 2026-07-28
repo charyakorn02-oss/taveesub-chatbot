@@ -226,11 +226,24 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     !collected.delivery_preference &&
     !session.locationBranchIntroDone
   ) {
-    const introReply = await introduceNearestBranches(collected.location_text, session);
-    if (introReply) {
+    // ลูกค้าอาจระบุชื่อสาขาที่ต้องการไปตรงๆ อยู่แล้ว (เช่น "คลอง4" "ลำลูกกา" "รังสิต" "สำนักงานใหญ่" "นวมินทร์90")
+    // ไม่ต้องเดา/แนะนำสาขาใกล้เคียงจาก Google Maps อีกต่อไปในเคสนี้ ใช้สาขาที่ลูกค้าระบุมาตรงๆ ไปเลย (ถือว่ามารับเองที่สาขา)
+    const branchesForDirectMatch = await store.getActiveBranches();
+    const directMatch = matchBranchFromText(
+      collected.location_text,
+      branchesForDirectMatch.map((b) => ({ branchId: b.id, branchName: b.name }))
+    );
+    if (directMatch) {
+      session.confirmedGeneralBranchId = directMatch.branchId;
       session.locationBranchIntroDone = true;
-      session.fallbackCount = 0;
-      return introReply;
+      collected.delivery_preference = collected.delivery_preference || "pickup_at_branch";
+    } else {
+      const introReply = await introduceNearestBranches(collected.location_text, session);
+      if (introReply) {
+        session.locationBranchIntroDone = true;
+        session.fallbackCount = 0;
+        return introReply;
+      }
     }
   }
 
