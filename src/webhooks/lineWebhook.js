@@ -44,6 +44,16 @@ router.post("/line", async (req, res) => {
     for (const event of events) {
       if (event.type === "message" && event.message.type === "text") {
         await handleLineText(event);
+      } else if (event.type === "message" && event.message.type === "image") {
+        // ลูกค้าส่งรูปภาพมา (เช่น รูปรถที่จะเทิร์น, สลิปโอนเงิน, รูปหน้าจอราคา) -> ส่งให้ Claude ดูภาพจริงๆ (vision) แทนที่จะเงียบไปเฉยๆ เหมือนเดิม
+        await handleLineImage(event);
+      } else if (
+        event.type === "message" &&
+        (event.message.type === "video" || event.message.type === "audio" || event.message.type === "file")
+      ) {
+        // วิดีโอ/เสียง/ไฟล์เอกสาร: Claude API ยังวิเคราะห์ไม่ได้โดยตรง (ข้อจำกัดของ AI ปัจจุบัน) แทนที่จะเงียบหายไปเลยเหมือนเดิม
+        // ให้รับทราบ+ถามกลับว่าต้องการอะไรแทน (ตามที่ผู้ใช้ระบบต้องการ) แล้วแนบโน้ตไว้ให้เซล/ทีมอะไหล่รู้ตอน handoff
+        await handleLineMedia(event);
       } else if (event.type === "postback") {
         await handlePostback(event);
       }
@@ -90,6 +100,90 @@ async function handleLineText(event) {
   store.savePendingBatch(`line:${userId}`, batch.texts).catch((err) => {
     console.error("[lineWebhook] savePendingBatch error:", err.message);
   });
+}
+
+// ลูกค้าส่งรูปภาพมา (เช่น รูปรถคันเดิมที่จะเทิร์น, สลิปโอนเงิน, รูปหน้าจอราคา/รุ่นรถที่สนใจ) -> โหลดรูปจริงจาก LINE แล้วส่งให้ Claude
+// วิเคราะห์แบบ vision (ดูภาพจริงๆ ไม่ใช่แค่เดาจากคำบรรยาย) เดิมระบบนี้ไม่รองรับเลย (เงียบหายไปเฉยๆ ไม่ตอบอะไรทั้งนั้น) เป็นช่องโหว่จริง
+async function handleLineImage(event) {
+  const userId = event.source.userId;
+  const session = await getSession("line", userId);
+  if (session.handedOff) return;
+
+  // ถ้าลูกค้าเพิ่งพิมพ์ข้อความอธิบายค้างอยู่ในคิว batch ก่อนส่งรูปตามมา (เช่น พิมพ์ "รถคันนี้เทิร์นได้เท่าไหร่" แล้วค่อยส่งรูป)
+  // ให้ยกเลิกตัวจับเวลาแล้วเอาข้อความนั้นมารวมวิเคราะห์พร้อมรูปเลย แทนที่จะแยกกันคนละรอบจนสับสน
+  const existing = pendingBatches.get(userId);
+  let captionText = "ลูกค้าส่งรูปภาพมาค่ะ (ไม่มีข้อความอธิบายเพิ่มเติม)";
+  if (existing) {
+    if (existing.timer) clearTimeout(existing.timer);
+    if (existing.texts.length > 0) captionText = existing.texts.join("\n");
+    pendingBatches.delete(userId);
+    store.clearPendingBatch(`line:${userId}`).catch(() => {});
+  }
+
+  let imagePart = null;
+  try {
+    const content = await line.getMessageContent(event.message.id);
+    imagePart = { base64: content.buffer.toString("base64"), mediaType: content.contentType };
+  } catch (err) {
+    console.error("[lineWebhook] getMessageContent error:", err.message);
+  }
+
+  if (!imagePart) {
+    // โหลดรูปไม่สำเร็จ -> ห้ามเงียบเฉยๆ บอกลูกค้าตรงๆ แล้วขอให้พิมพ์อธิบายแทน
+    try {
+      await line.pushMessage(userId, "ขอโทษด้วยนะคะ แอดมินเปิดดูรูปที่ส่งมาไม่สำเร็จชั่วคราว รบกวนพิมพ์บอกรายละเอียดเป็นข้อความแทนได้ไหมคะ 🙏");
+    } catch (_) {}
+    return;
+  }
+
+  try {
+    const analysis = await claude.analyzeMessage(session.history, captionText, session.fallbackCount, session.collected, imagePart);
+    session.history.push({ role: "user", content: "[ลูกค้าส่งรูปภาพแนบมา] " + captionText });
+
+    if (!session.customerName) {
+      session.customerName = await line.getProfile(userId);
+    }
+
+    const replyText = await routing.handleTurn({
+      session,
+      analysis,
+      rawMessage: captionText,
+      platform: "line",
+      userId,
+      customerName: session.customerName,
+    });
+    session.history.push({ role: "assistant", content: replyText });
+    saveSession("line", userId, session);
+    await line.pushMessage(userId, replyText);
+  } catch (err) {
+    console.error("[lineWebhook] handleLineImage error:", err.message);
+    try {
+      await line.pushMessage(userId, "ขอโทษนะคะ ระบบขัดข้องชั่วคราว เดี๋ยวทีมงานติดต่อกลับไปนะคะ");
+    } catch (_) {}
+  }
+}
+
+// วิดีโอ/ไฟล์เสียง/ไฟล์เอกสาร: Claude API ยังวิเคราะห์ตรงๆ ไม่ได้ (ข้อจำกัดของ AI ปัจจุบัน ไม่ใช่แค่ของระบบนี้) แทนที่จะเงียบหายไปเฉยๆ
+// เหมือนเดิม ให้รับทราบ+ถามกลับทันทีว่าต้องการอะไรเกี่ยวกับไฟล์นี้ แล้วจำโน้ตไว้ใน collected เผื่อ handoff ให้เซล/ทีมอะไหล่รู้ว่ามีไฟล์แนบ
+// รอไว้ให้เปิดดูเองในแชท LINE ของลูกค้าโดยตรง (ระบบนี้ไม่ได้ทำระบบส่งต่อไฟล์แนบอัตโนมัติ)
+async function handleLineMedia(event) {
+  const userId = event.source.userId;
+  const session = await getSession("line", userId);
+  if (session.handedOff) return;
+
+  const typeLabelMap = { video: "คลิปวิดีโอ", audio: "ไฟล์เสียง", file: "ไฟล์เอกสาร" };
+  const typeLabel = typeLabelMap[event.message.type] || "ไฟล์แนบ";
+
+  session.collected.hasMediaAttachment = typeLabel;
+  session.history.push({ role: "user", content: `[ลูกค้าส่ง${typeLabel}มา]` });
+  const replyText = `ได้รับ${typeLabel}แล้วนะคะ 😊 ขอทราบเพิ่มเติมได้ไหมคะว่าอยากให้แอดมินช่วยเรื่องอะไรเกี่ยวกับ${typeLabel}นี้ (เช่น สอบถามราคา นัดซ่อม หรือเรื่องอื่นๆ) แอดมินจะได้ส่งต่อเรื่องให้ทีมงานที่เกี่ยวข้องดูให้ถูกต้องเลยค่ะ`;
+  session.history.push({ role: "assistant", content: replyText });
+  saveSession("line", userId, session);
+  try {
+    await line.pushMessage(userId, replyText);
+  } catch (err) {
+    console.error("[lineWebhook] handleLineMedia pushMessage error:", err.message);
+  }
 }
 
 // รีเซ็ตตัวจับเวลาทุกครั้งที่มีข้อความใหม่เข้ามาจากลูกค้าคนเดิม ถ้าเงียบไปครบเวลาที่กำหนดแล้วค่อยประมวลผลรวมทีเดียว
