@@ -40,6 +40,16 @@ function genId(prefix) {
   return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
 }
 
+// สร้างเลขที่แบบอ่านง่าย แยกตามสาขา + เลขรัน เช่น "LD-NM90-001", "BK-HQ-002" แทนรหัสยาวๆ แบบเดิม (LD-<timestamp>-<random>)
+// นับจากจำนวนแถวที่มี branchId ตรงกันในชีตนั้นๆ (รวมแถวที่ถูกยกเลิกไปแล้วด้วย กันเลขซ้ำ) แล้ว +1 ต่อจากตัวสุดท้าย
+// รหัสสาขา (branchCode) ใช้ค่า id ของสาขาจากแท็บ Branches ตรงๆ (ตัวพิมพ์ใหญ่) เพราะเป็นค่าที่ไม่ซ้ำกันอยู่แล้วในระบบ
+async function genBranchSeqId(prefix, sheet, existingRows, branchId) {
+  const branchCode = String(branchId || 'XX').toUpperCase();
+  const count = existingRows.filter((r) => r.get('branchId') === branchId).length;
+  const seq = String(count + 1).padStart(3, '0');
+  return `${prefix}-${branchCode}-${seq}`;
+}
+
 // --- Branches ---
 async function getActiveBranches() {
   const rows = await getRows('Branches');
@@ -236,7 +246,8 @@ async function getModelList() {
 async function appendLead(lead) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Leads'];
-  const leadId = genId('LD');
+  const existingRows = await sheet.getRows();
+  const leadId = await genBranchSeqId('LD', sheet, existingRows, lead.branchId);
   const now = new Date().toISOString();
   await sheet.addRow({
     createdAt: now,
@@ -361,7 +372,8 @@ async function getBookingsForBranchDate(branchId, serviceDate) {
 async function appendBooking(booking) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Bookings'];
-  const bookingId = genId('BK');
+  const existingRows = await sheet.getRows();
+  const bookingId = await genBranchSeqId('BK', sheet, existingRows, booking.branchId);
   const now = new Date().toISOString();
   await sheet.addRow({
     createdAt: now,
