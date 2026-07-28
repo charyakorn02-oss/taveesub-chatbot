@@ -72,7 +72,7 @@ function matchBranchFromText(text, options) {
 // พอลูกค้าบอกที่อยู่มาปุ๊บ (เฉพาะซื้อรถใหม่ ยังไม่ได้ระบุชื่อเซล ยังไม่ได้เลือกวิธีรับรถ) ให้รีบค้นหาสาขาที่ใกล้ที่สุดจริงๆ
 // ด้วย Google Maps ทันที แทนที่จะให้ Claude เดาเองว่าอยู่ในเขตบริการไหม/สาขาไหนใกล้สุด ช่วยให้แม่นยำและไม่ต้องรอจนขั้นตอนสุดท้าย
 // ทำครั้งเดียวต่อ session (เก็บ flag session.locationBranchIntroDone กันถามซ้ำ/แนะนำซ้ำ)
-async function introduceNearestBranches(locationText) {
+async function introduceNearestBranches(locationText, session) {
   const branches = await store.getActiveBranches();
   const geo = locationText ? await geocode(locationText) : null;
 
@@ -83,17 +83,24 @@ async function introduceNearestBranches(locationText) {
       .sort((a, b) => a.distanceKm - b.distanceKm);
 
     const top2 = ranked.slice(0, 2).map((r) => r.branch);
-    if (top2.length === 0) return null;
-
-    if (top2.length === 1) {
-      return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 สาขาที่ใกล้พี่ที่สุดคือ ${top2[0].name} ค่ะ พี่สะดวกมารับที่สาขานี้เอง หรือสนใจให้จัดส่งถึงบ้านดีคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
+    if (top2.length > 0) {
+      if (top2.length === 1) {
+        return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 สาขาที่ใกล้พี่ที่สุดคือ ${top2[0].name} ค่ะ พี่สะดวกมารับที่สาขานี้เอง หรือสนใจให้จัดส่งถึงบ้านดีคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
+      }
+      const names = top2.map((b) => b.name).join(" หรือ ");
+      return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุดมี 2 สาขาเลยคือ ${names} พี่สะดวกไปสาขาไหนดีคะ หรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
     }
-    const names = top2.map((b) => b.name).join(" หรือ ");
-    return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุดมี 2 สาขาเลยคือ ${names} พี่สะดวกไปสาขาไหนดีคะ หรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
+    // มีพิกัดแต่หาไม่เจอเลยว่าสาขาไหนใกล้ (เช่น สาขายังไม่ได้ตั้งพิกัดในชีต) -> ตกไปโชว์ลิสต์สาขาทั้งหมดด้านล่างแทน
   }
 
-  // นอกเขตบริการจริงๆ หรือหาพิกัดไม่ได้ (พิมพ์มาไม่ชัดเจน/geocode ล้มเหลว) -> ไม่เดาสาขา ให้สนญ. ดูแลแทน
-  return "เข้าใจแล้วค่ะ พื้นที่ของพี่ทางสำนักงานใหญ่จะเป็นผู้ประสานงานดูแลให้นะคะ (ทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ) ขอทราบชื่อ-เบอร์ติดต่อกลับได้ไหมคะ 😊";
+  // หาพิกัดไม่ได้ชัดเจน หรือ Google Maps เดาที่อยู่กว้างเกินไปจนไม่รู้จังหวัด (เช่น ลูกค้าพิมพ์สั้นๆ กำกวมอย่าง "อนุสาวรีย์" เฉยๆ
+  // ไม่ระบุว่าอนุสาวรีย์ไหน ทำให้ Google Maps เดาเป็นทั้งประเทศไทยไปเลย) -> ห้ามเดาส่งสำนักงานใหญ่แบบเงียบๆ อีกต่อไป (ลูกค้าอาจอยู่ในเขตบริการจริงๆ
+  // แค่พิมพ์ที่อยู่ไม่ชัดพอ) ให้โชว์รายชื่อสาขาทั้งหมดให้ลูกค้าเลือกเอง พร้อมถามเรื่องจัดส่ง/มารับเองไปในคำถามเดียวกันเลย
+  if (session) {
+    session.pendingBranchChoiceIds = branches.map((b) => b.id);
+  }
+  const allNames = branches.map((b) => `- ${b.name}`).join("\n");
+  return `เข้าใจแล้วค่ะ 😊 แอดมินขอแนะนำสาขาของทวีทรัพย์ให้พี่เลือกนะคะ:\n${allNames}\n\nพี่สะดวกไปรับรถที่สาขาไหนดีคะ หรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
 }
 
 // เหมือน introduceNearestBranches แต่ใช้สำหรับ "ซ่อมรถ" (service) โดยเฉพาะ: ลูกค้าซ่อมรถต้องเลือกสาขาเสมอ (ไม่มีตัวเลือกจัดส่ง)
@@ -219,7 +226,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     !collected.delivery_preference &&
     !session.locationBranchIntroDone
   ) {
-    const introReply = await introduceNearestBranches(collected.location_text);
+    const introReply = await introduceNearestBranches(collected.location_text, session);
     if (introReply) {
       session.locationBranchIntroDone = true;
       session.fallbackCount = 0;
