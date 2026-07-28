@@ -16,7 +16,9 @@ const { getSession, saveSession } = require("../session/sessionStore");
 const REGISTER_KEYWORD = "ลงทะเบียน";
 
 // พนักงานพิมพ์ข้อความนี้ตรงๆ (ไม่ได้กดปุ่ม quick reply) ก็ให้รับทราบงานได้เหมือนกัน เผื่อปุ่มเก่าถูกข้อความใหม่ทับไปแล้วกดไม่ได้อีก
-const ACK_TEXT_PATTERN = /^รับทราบ(แล้ว)?$/;
+// รองรับพิมพ์เลขต่อท้ายด้วย (เช่น "รับทราบ 2" หรือ "รับทราบ #2") เพื่อระบุว่าจะรับทราบงานลำดับไหน (เลขเดียวกับที่โชว์ในปุ่ม "รับทราบ #N")
+// ถ้าพิมพ์แค่ "รับทราบ" เฉยๆ ไม่ใส่เลข และมีงานค้างมากกว่า 1 งาน จะไม่เดาให้อีกต่อไป (ดู handleAckByText) จะถามกลับให้ระบุเลขแทน
+const ACK_TEXT_PATTERN = /^รับทราบ(?:แล้ว)?\s*#?\s*(\d+)?$/;
 
 // รอลูกค้าพิมพ์ให้ครบก่อนค่อยประมวลผล+ตอบทีเดียว กันเคสลูกค้าพิมพ์แยกเป็นหลายข้อความติดกัน
 // (เช่น พิมพ์ทีละประโยค) แล้วบอทตอบสวนทุกข้อความจนดูงงๆ/ตอบไม่ตรงบริบท
@@ -60,9 +62,11 @@ async function handleLineText(event) {
 
   // ---- flow พนักงานพิมพ์ "รับทราบแล้ว" ตรงๆ (ไม่ได้กดปุ่ม) ----
   // เผื่อปุ่ม quick reply ของงานเก่าโดนข้อความใหม่ทับไปแล้วกดไม่ได้อีก ให้พิมพ์ข้อความนี้แทนได้เลย
-  // หาให้เองว่าเป็นพนักงานคนไหนจาก lineUserId ที่เคยลงทะเบียนไว้ แล้วรับทราบงานที่ค้างนานที่สุดของคนนั้นให้อัตโนมัติ ทีละงาน
-  if (ACK_TEXT_PATTERN.test(text)) {
-    return handleAckByText(userId);
+  // หาให้เองว่าเป็นพนักงานคนไหนจาก lineUserId ที่เคยลงทะเบียนไว้ แล้วรับทราบงานตามเลขที่ระบุ (หรือถามกลับถ้าไม่ระบุและมีมากกว่า 1 งาน)
+  const ackMatch = text.match(ACK_TEXT_PATTERN);
+  if (ackMatch) {
+    const indexNum = ackMatch[1] ? Number(ackMatch[1]) : null;
+    return handleAckByText(userId, indexNum);
   }
 
   // ---- flow ปกติ: คุยกับลูกค้า ผ่าน Claude -> เข้าคิว batch รอรวมข้อความก่อนตอบ ----
@@ -213,24 +217,56 @@ async function handlePostback(event) {
   await acknowledgeAndReply(event.source.userId, refId);
 }
 
-// พนักงานพิมพ์ "รับทราบแล้ว" ตรงๆ เป็นข้อความ (ไม่ได้กดปุ่ม) -> หาว่าเป็นพนักงานคนไหนจาก lineUserId แล้วรับทราบงานที่ค้างนานสุดให้ทีละงาน
-async function handleAckByText(userId) {
+// พนักงานพิมพ์ "รับทราบแล้ว" ตรงๆ เป็นข้อความ (ไม่ได้กดปุ่ม) -> หาว่าเป็นพนักงานคนไหนจาก lineUserId แล้วรับทราบงานตามเลขที่ระบุ (indexNum)
+// เลข #N ตรงกับลำดับที่โชว์ในปุ่ม quick reply / ข้อความแจ้งเตือน (เรียงเก่าสุดไปใหม่สุดเหมือนกันทั้งสองที่)
+// ถ้าไม่ได้ระบุเลขมาและมีงานค้างมากกว่า 1 งาน จะไม่เดาว่าเป็นงานไหนให้อีกต่อไป (กันรับทราบผิดงาน) จะถามกลับพร้อมลิสต์ให้พนักงานเลือกแทน
+async function handleAckByText(userId, indexNum) {
   try {
     const staff = await store.findStaffByLineUserId(userId);
     if (!staff) {
       await line.pushMessage(userId, "ขอโทษนะคะ ไม่พบว่าไลน์นี้ลงทะเบียนเป็นพนักงานในระบบไว้ค่ะ (ลงทะเบียนก่อนด้วยคำสั่ง \"ลงทะเบียน <รหัสพนักงาน> <PIN>\")");
       return;
     }
-    const pending = await store.getPendingRefsForStaff(staff.name, staff.branchId, null);
-    if (pending.length === 0 || !pending[0] || !pending[0].refId) {
+    const pending = (await store.getPendingRefsForStaff(staff.name, staff.branchId, null)).filter((p) => p && p.refId);
+    if (pending.length === 0) {
       await line.pushMessage(userId, "ตอนนี้ไม่มีงานค้างที่ต้องรับทราบแล้วนะคะ ✅");
       return;
     }
-    // รับทราบงานที่ค้างนานที่สุด (เก่าสุด) ก่อนเสมอ
-    await acknowledgeAndReply(userId, pending[0].refId);
+
+    if (indexNum) {
+      const target = pending[indexNum - 1];
+      if (!target) {
+        await line.pushMessage(
+          userId,
+          `ไม่พบงาน #${indexNum} นะคะ ตอนนี้มีงานค้างอยู่ดังนี้ค่ะ:\n${buildPendingListText(pending)}\n\nพิมพ์ "รับทราบ #เลข" เพื่อระบุงานที่ต้องการรับทราบได้เลยค่ะ`
+        );
+        return;
+      }
+      await acknowledgeAndReply(userId, target.refId);
+      return;
+    }
+
+    if (pending.length === 1) {
+      // มีงานค้างแค่งานเดียว รับทราบให้เลย ไม่ต้องให้พิมพ์เลขซ้ำ
+      await acknowledgeAndReply(userId, pending[0].refId);
+      return;
+    }
+
+    // มีงานค้างหลายงานแต่ไม่ได้ระบุเลขมา -> ถามกลับให้ชัดเจนว่าจะรับทราบงานไหน แทนที่จะเดาเอาเองว่าเป็นงานที่ค้างนานสุด
+    await line.pushMessage(
+      userId,
+      `ตอนนี้มีงานค้างรับทราบอยู่ ${pending.length} งานนะคะ พิมพ์ "รับทราบ #เลข" เพื่อระบุว่าจะรับทราบงานไหนค่ะ:\n${buildPendingListText(pending)}`
+    );
   } catch (err) {
     console.error("[lineWebhook] handleAckByText error:", err.message);
   }
+}
+
+// สร้างข้อความลิสต์งานค้างพร้อมเลขลำดับ #N (ใช้ทั้งตอนถามกลับให้เลือก และตอนแจ้งว่าเลขที่พิมพ์มาไม่พบ)
+function buildPendingListText(pending) {
+  return pending
+    .map((p, i) => `#${i + 1}) [${p.type === "booking" ? "นัดซ่อม" : "Lead"}] ลูกค้า: ${p.customerName || "-"} | เรื่อง: ${p.detail || "-"}`)
+    .join("\n");
 }
 
 // รับทราบงานตาม refId ที่ระบุ (ใช้ร่วมกันทั้งตอนกดปุ่ม quick reply และตอนพิมพ์ "รับทราบแล้ว" เป็นข้อความ)
