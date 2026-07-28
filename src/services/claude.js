@@ -23,9 +23,10 @@ const MAX_HISTORY_MESSAGES = 12;
  * @param {string} latestMessage ข้อความล่าสุดจากลูกค้า
  * @param {number} fallbackCount จำนวนครั้งที่บอทงงมาก่อนหน้า (ส่งไปให้ Claude รับรู้บริบท)
  * @param {object} collected ข้อมูลที่เก็บสะสมไว้แล้วใน session (เช่น ชื่อ/เบอร์/สาขา/รุ่นรถ) กันลืมตอน history ถูกตัดทิ้งไปเพราะยาวเกิน
+ * @param {{base64: string, mediaType: string}|null} imagePart รูปภาพที่ลูกค้าแนบมา (ถ้ามี) - ส่งให้ Claude ดูภาพประกอบการตอบ (vision)
  * @returns {Promise<object>} JSON ที่ Claude ตอบกลับมา (parse แล้ว)
  */
-async function analyzeMessage(history, latestMessage, fallbackCount = 0, collected = null) {
+async function analyzeMessage(history, latestMessage, fallbackCount = 0, collected = null, imagePart = null) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน .env");
@@ -52,15 +53,26 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
       ? `[ข้อมูลที่เก็บไว้แล้วจากการคุยก่อนหน้า อย่าถามซ้ำเรื่องที่มีอยู่แล้วในนี้:\n${knownFacts.join("\n")}]\n\n`
       : "";
 
+  const textContent =
+    knownFactsNote +
+    (fallbackCount > 0
+      ? `[หมายเหตุ: บอทตอบไม่เข้าใจมาแล้ว ${fallbackCount} ครั้ง ถ้ายังไม่เข้าใจอีก ให้ตั้ง fallback = true]\n${latestMessage}`
+      : latestMessage);
+
+  // ถ้ามีรูปภาพแนบมาด้วย (ลูกค้าส่งรูปผ่าน LINE) ต้องส่ง content เป็น array ผสมรูป+ข้อความ (Claude vision รูปแบบ multimodal)
+  // แทนที่จะเป็น string ธรรมดา ถึงจะให้ Claude "เห็น" ภาพจริงๆ ได้ ไม่ใช่แค่อ่านคำบรรยาย
+  const userContent = imagePart
+    ? [
+        { type: "image", source: { type: "base64", media_type: imagePart.mediaType, data: imagePart.base64 } },
+        { type: "text", text: textContent },
+      ]
+    : textContent;
+
   const messages = [
     ...trimmedHistory,
     {
       role: "user",
-      content:
-        knownFactsNote +
-        (fallbackCount > 0
-          ? `[หมายเหตุ: บอทตอบไม่เข้าใจมาแล้ว ${fallbackCount} ครั้ง ถ้ายังไม่เข้าใจอีก ให้ตั้ง fallback = true]\n${latestMessage}`
-          : latestMessage),
+      content: userContent,
     },
   ];
 

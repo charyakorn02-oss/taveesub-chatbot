@@ -86,4 +86,17 @@ function verifySignature(rawBody, signature) {
   return hash === signature;
 }
 
-module.exports = { replyMessage, pushMessage, pushMessageWithAck, getProfile, verifySignature };
+// โหลดไฟล์แนบ (รูปภาพ/วิดีโอ/เสียง) ที่ลูกค้าส่งมาจาก LINE — endpoint นี้แยกจาก LINE_API หลัก (ใช้ api-data.line.me ไม่ใช่ api.line.me)
+// ใช้กับรูปภาพเพื่อส่งต่อให้ Claude วิเคราะห์ (ดู claude.js) ส่วนวิดีโอ/เสียงยังไม่รองรับการวิเคราะห์อัตโนมัติ (ข้อจำกัดของ Claude API)
+async function getMessageContent(messageId) {
+  const res = await axios.get(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+    headers: { Authorization: "Bearer " + channelToken() },
+    responseType: "arraybuffer",
+  });
+  return {
+    buffer: Buffer.from(res.data),
+    contentType: (res.headers && res.headers["content-type"]) || "image/jpeg",
+  };
+}
+
+module.exports = { replyMessage, pushMessage, pushMessageWithAck, getProfile, verifySignature, getMessageContent };
