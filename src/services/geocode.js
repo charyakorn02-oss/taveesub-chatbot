@@ -8,7 +8,11 @@ const BKK_PATHUM_PROVINCES = ["กรุงเทพมหานคร", "กร
 
 async function geocode(locationText) {
   const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key || !locationText) return null;
+  if (!key) {
+    console.warn("[geocode] GOOGLE_MAPS_API_KEY ยังไม่ได้ตั้งค่าใน env -> ข้ามการหาพิกัด (จะ fallback ไปสำนักงานใหญ่เสมอ)");
+    return null;
+  }
+  if (!locationText) return null;
 
   try {
     const res = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
@@ -21,11 +25,19 @@ async function geocode(locationText) {
       timeout: 8000,
     });
 
+    if (res.data && res.data.status && res.data.status !== "OK") {
+      console.warn(`[geocode] Google API status ไม่ใช่ OK: ${res.data.status} สำหรับข้อความ "${locationText}" (error_message: ${res.data.error_message || "-"})`);
+    }
+
     const result = res.data && res.data.results && res.data.results[0];
-    if (!result) return null;
+    if (!result) {
+      console.warn(`[geocode] ไม่พบผลลัพธ์สำหรับข้อความ: "${locationText}"`);
+      return null;
+    }
 
     const { lat, lng } = result.geometry.location;
     const province = extractProvince(result.address_components);
+    console.log(`[geocode] "${locationText}" -> province="${province}" inServiceArea=${isServiceArea(province)} formattedAddress="${result.formatted_address}"`);
 
     return { lat, long: lng, province, formattedAddress: result.formatted_address };
   } catch (err) {
