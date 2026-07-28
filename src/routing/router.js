@@ -85,8 +85,13 @@ async function introduceNearestBranches(locationText, session) {
     const top2 = ranked.slice(0, 2).map((r) => r.branch);
     if (top2.length > 0) {
       if (top2.length === 1) {
+        if (session) session.pendingBranchChoiceIds = [top2[0].id];
         return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 สาขาที่ใกล้พี่ที่สุดคือ ${top2[0].name} ค่ะ พี่สะดวกมารับที่สาขานี้เอง หรือสนใจให้จัดส่งถึงบ้านดีคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
       }
+      // สำคัญมาก: ต้องจำไว้ว่าเสนอสาขาไหนไปบ้าง (session.pendingBranchChoiceIds) ไม่งั้นตอนลูกค้าตอบเลือกสาขามา
+      // Claude จะแค่ตอบรับปากเปล่าเฉยๆ (ไม่ได้บันทึกจริงจังลง session/collected) พอคุยต่อไปอีกหลายข้อความ (ชื่อ/เบอร์)
+      // ถึงขั้นตอน handoff สุดท้ายจะหาสาขาใหม่จากศูนย์ทั้งที่ลูกค้าตอบเลือกไปแล้ว กลายเป็นถามซ้ำ (บั๊กที่เจอจริง)
+      if (session) session.pendingBranchChoiceIds = top2.map((b) => b.id);
       const names = top2.map((b) => b.name).join(" หรือ ");
       return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุดมี 2 สาขาเลยคือ ${names} พี่สะดวกไปสาขาไหนดีคะ หรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะ (จัดส่งฟรีในระยะ 25 กม. จากสาขา และทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะ)`;
     }
@@ -301,6 +306,22 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       const names = candidates.map((b) => b.name).join(" หรือ ");
       return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกนำรถเข้าซ่อมสาขาไหนดีระหว่าง ${names} คะ 🙏`;
     }
+  }
+
+  // รอบก่อนเคยแนะนำ 1-2 สาขาซื้อรถใหม่ให้เลือกไว้แล้ว (จาก introduceNearestBranches) -> เช็คคำตอบทันทีตอนนี้เลย ไม่ต้องรอถึงขั้นตอน handoff สุดท้าย
+  // กันบั๊กที่เจอจริง: ลูกค้าตอบเลือกสาขาไปแล้ว แต่ระบบไม่ได้บันทึกจริงจัง (แค่ Claude ตอบรับปากเปล่าเฉยๆ) พอคุยต่อไปอีกหลายข้อความ (ชื่อ/เบอร์)
+  // ถึงขั้นตอน handoff สุดท้ายกลับหาสาขาใหม่จากศูนย์ ถามซ้ำอีกรอบ ทั้งที่ลูกค้าตอบไปแล้ว
+  if (collected.intent_category === "buying_new" && session.pendingBranchChoiceIds && session.pendingBranchChoiceIds.length > 0) {
+    const branchesForPending = await store.getActiveBranches();
+    const candidates = session.pendingBranchChoiceIds.map((id) => branchesForPending.find((b) => b.id === id)).filter(Boolean);
+    const matched = matchBranchFromText(rawMessage || "", candidates.map((b) => ({ branchId: b.id, branchName: b.name })));
+    if (matched) {
+      session.pendingBranchChoiceIds = null;
+      session.confirmedGeneralBranchId = matched.branchId;
+      collected.delivery_preference = collected.delivery_preference || "pickup_at_branch";
+      session.fallbackCount = 0;
+    }
+    // ถ้าไม่ match ก็ปล่อยผ่านไปให้ Claude/flow ปกติจัดการต่อ (ลูกค้าอาจกำลังตอบเรื่องอื่นอยู่ เช่น บอกจัดส่งแทน ซึ่ง Claude จะ extract delivery_preference เองจาก field ปกติ)
   }
 
   const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage);
