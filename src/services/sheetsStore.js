@@ -540,6 +540,55 @@ async function getLatestCustomerRecord(customerId) {
   return all[0];
 }
 
+// --- Sessions ---
+// เก็บสถานะบทสนทนาที่กำลังคุยอยู่ (collected/history/flags ต่างๆ) ไว้ใน Sheets ด้วย เผื่อรอดจากตอนเซิร์ฟเวอร์รีสตาร์ท
+// (เช่น deploy โค้ดใหม่ หรือแพลนฟรีของ Render พักเครื่องอัตโนมัติตอนไม่มีคนใช้ 15 นาที) เดิมเก็บแค่ใน memory (Map) เฉยๆ
+// พอรีสตาร์ทปุ๊บข้อมูลหายหมดทันที ทำให้บอทลืมบทสนทนาที่คุยค้างอยู่กลางคัน ถามซ้ำคำถามพื้นฐานที่เพิ่งถามไปแล้ว
+async function getSessionData(sessionKey) {
+  const rows = await getRows('Sessions');
+  const row = rows.find((r) => r.get('sessionKey') === sessionKey);
+  if (!row) return null;
+  const raw = row.get('dataJson');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('[sheetsStore] getSessionData JSON parse error:', err.message);
+    return null;
+  }
+}
+
+async function getOrCreateSessionsSheet(doc) {
+  let sheet = doc.sheetsByTitle['Sessions'];
+  if (!sheet) {
+    sheet = await doc.addSheet({ title: 'Sessions', headerValues: ['sessionKey', 'dataJson', 'updatedAt'] });
+  }
+  return sheet;
+}
+
+async function saveSessionData(sessionKey, dataObj) {
+  const doc = await getDoc();
+  const sheet = await getOrCreateSessionsSheet(doc);
+  const rows = await sheet.getRows();
+  const row = rows.find((r) => r.get('sessionKey') === sessionKey);
+  const dataJson = JSON.stringify(dataObj);
+  const now = new Date().toISOString();
+  if (row) {
+    row.set('dataJson', dataJson);
+    row.set('updatedAt', now);
+    await row.save();
+  } else {
+    await sheet.addRow({ sessionKey, dataJson, updatedAt: now });
+  }
+}
+
+// ใช้ตอน handoff เสร็จสมบูรณ์แล้ว (ไม่ต้องเก็บสถานะการคุยของรอบนี้ไว้ต่ออีก) เผื่ออนาคตอยากเรียกใช้เคลียร์ทิ้ง
+async function deleteSessionData(sessionKey) {
+  const rows = await getRows('Sessions');
+  const row = rows.find((r) => r.get('sessionKey') === sessionKey);
+  if (row) await row.delete();
+}
+
 module.exports = {
   getActiveBranches,
   getBranchById,
@@ -575,4 +624,7 @@ module.exports = {
   markBookingEscalated,
   getPendingRefsForStaff,
   getLatestCustomerRecord,
+  getSessionData,
+  saveSessionData,
+  deleteSessionData,
 };
