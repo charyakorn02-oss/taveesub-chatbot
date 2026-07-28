@@ -504,6 +504,42 @@ async function getPendingRefsForStaff(staffName, branchId, excludeId) {
   );
 }
 
+// หาข้อมูลติดต่อล่าสุดของลูกค้าคนนี้ (จาก LINE userId เก็บไว้ในคอลัมน์ customerId ของทั้งแท็บ Leads และ Bookings)
+// ใช้ตอนลูกค้าทักมาใหม่ (อาจเป็นคนละวัน/คนละเซสชันกับครั้งก่อน) เพื่อถามยืนยันว่าจะใช้สาขา/เบอร์เดิมต่อไหม
+// ไม่ได้เอาไว้ข้ามคำถามไปเฉยๆ (ฝั่ง router.js ยังคงถามยืนยันทุกครั้งเสมอ แค่โชว์ข้อมูลเดิมประกอบการถามให้ลูกค้าตัดสินใจง่ายขึ้น)
+async function getLatestCustomerRecord(customerId) {
+  if (!customerId) return null;
+  const [leadRows, bookingRows] = await Promise.all([getRows('Leads'), getRows('Bookings')]);
+
+  const leadRecords = leadRows
+    .map(rowToObject)
+    .filter((r) => r.customerId === customerId && r.status !== 'cancelled')
+    .map((r) => ({
+      source: 'lead',
+      branchId: r.branchId || null,
+      phone: r.phone || null,
+      customerName: r.customerName || null,
+      createdAt: r.createdAt || null,
+    }));
+
+  const bookingRecords = bookingRows
+    .map(rowToObject)
+    .filter((r) => r.customerId === customerId && r.status !== 'cancelled')
+    .map((r) => ({
+      source: 'booking',
+      branchId: r.branchId || null,
+      phone: r.phone || null,
+      customerName: r.customerName || null,
+      createdAt: r.createdAt || null,
+    }));
+
+  const all = [...leadRecords, ...bookingRecords].filter((r) => r.branchId || r.phone);
+  if (all.length === 0) return null;
+
+  all.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  return all[0];
+}
+
 module.exports = {
   getActiveBranches,
   getBranchById,
@@ -538,4 +574,5 @@ module.exports = {
   getPendingBookingEscalations,
   markBookingEscalated,
   getPendingRefsForStaff,
+  getLatestCustomerRecord,
 };
