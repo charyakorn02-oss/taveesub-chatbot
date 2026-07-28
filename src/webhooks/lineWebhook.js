@@ -76,6 +76,12 @@ async function handleLineText(event) {
     pendingBatches.set(userId, batch);
   }
   batch.texts.push(text);
+
+  // เซฟข้อความที่ค้างอยู่ในคิว batch ลง Sheets ด้วย (fire-and-forget) เผื่อเซิร์ฟเวอร์รีสตาร์ทพอดีตอนลูกค้ากำลังพิมพ์อยู่
+  // (เช่น deploy โค้ดใหม่ชนจังหวะพอดี) กันข้อความหายเงียบๆ โดยไม่มีการตอบกลับเลย — จะถูกกู้คืนตอนบูตเครื่องรอบถัดไป (ดู recoverPendingBatches)
+  store.savePendingBatch(`line:${userId}`, batch.texts).catch((err) => {
+    console.error("[lineWebhook] savePendingBatch error:", err.message);
+  });
 }
 
 // รีเซ็ตตัวจับเวลาทุกครั้งที่มีข้อความใหม่เข้ามาจากลูกค้าคนเดิม ถ้าเงียบไปครบ BATCH_WAIT_MS ค่อยประมวลผลรวมทีเดียว
@@ -100,6 +106,12 @@ function scheduleBatchedReply(userId) {
 async function flushBatch(userId) {
   const batch = pendingBatches.get(userId);
   pendingBatches.delete(userId);
+
+  // เคลียร์ backup ใน Sheets ทิ้งด้วยเสมอ (ไม่ว่าจะมีข้อความจริงให้ประมวลผลรอบนี้หรือไม่) กันขยะค้าง
+  store.clearPendingBatch(`line:${userId}`).catch((err) => {
+    console.error("[lineWebhook] clearPendingBatch error:", err.message);
+  });
+
   if (!batch || batch.texts.length === 0) return;
 
   const combinedText = batch.texts.join("\n");
@@ -258,4 +270,23 @@ async function acknowledgeAndReply(userId, refId) {
   }
 }
 
+// เรียกครั้งเดียวตอนเซิร์ฟเวอร์เพิ่งบูต (ดู server.js) เพื่อดึงข้อความที่ค้างอยู่จากตอนก่อนรีสตาร์ท (เช่น deploy โค้ดใหม่
+// ชนจังหวะพอดีตอนลูกค้ากำลังพิมพ์อยู่ในช่วงรอ batch) กลับมาประมวลผลต่อให้ทันที กันลูกค้าเห็นบอทเงียบหายไปดื้อๆ
+async function recoverPendingBatches() {
+  try {
+    const leftover = await store.getAllPendingBatches();
+    for (const item of leftover) {
+      if (!item.sessionKey.startsWith("line:")) continue;
+      const userId = item.sessionKey.slice("line:".length);
+      if (!userId || !item.texts || item.texts.length === 0) continue;
+      console.log(`[lineWebhook] กู้คืนข้อความค้างจากตอนรีสตาร์ทให้ลูกค้า ${userId} (${item.texts.length} ข้อความ)`);
+      pendingBatches.set(userId, { texts: item.texts });
+      await flushBatch(userId).catch((err) => console.error("[lineWebhook] recoverPendingBatches flushBatch error:", err.message));
+    }
+  } catch (err) {
+    console.error("[lineWebhook] recoverPendingBatches error:", err.message);
+  }
+}
+
+router.recoverPendingBatches = recoverPendingBatches;
 module.exports = router;
