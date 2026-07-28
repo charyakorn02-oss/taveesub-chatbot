@@ -313,7 +313,12 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     if (detailParts.length > 0) {
       session.fallbackCount = 0;
       session.pendingHistoryConfirm = { branchId: histBranch ? histBranch.id : null, phone: hist.phone || null };
-      return `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
+      // สำคัญมาก: ห้ามทิ้งคำตอบ/คำถามที่ลูกค้าเพิ่งถามมาในข้อความเดียวกัน (เช่น "ใช้เอกสารอะไรบ้าง") ไปเฉยๆ
+      // เอาคำตอบของ Claude ที่ตอบเรื่องนั้นไปแล้ว (analysis.reply_text_to_customer) มาต่อท้ายด้วยคำถามยืนยันข้อมูลเดิมเสมอ
+      // ถ้า Claude ตอบเองไม่ได้ ก็ยังมีข้อความบอกลูกค้าอยู่แล้วว่าจะให้ทีมงานช่วยตอบ (ตามกฎ has_confident_answer ใน systemPrompt)
+      const historyQuestion = `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
+      const baseReply = (analysis.reply_text_to_customer || "").trim();
+      return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
     }
   }
 
