@@ -500,6 +500,7 @@ async function handleGeneralHandoff({ collected, rawMessage, platform, userId, c
     "สาขาที่ใกล้ลูกค้า: " + branch.name + "\n" +
     "คำถาม/ข้อความล่าสุดจากลูกค้า: " + (collected.model_or_issue || rawMessage || "-") + "\n" +
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
     "Lead ID: " + leadId;
 
   // เคส general ไม่มีเซล/ทีมอะไหล่เจาะจงรับผิดชอบ ให้แจ้งหัวหน้าสาขาโดยตรงเลย พร้อมปุ่มรับทราบ
@@ -666,6 +667,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     deliveryNote +
     "ที่อยู่ลูกค้า: " + (collected.location_text || "-") + "\n" +
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
     "Lead ID: " + leadId;
 
   await notifyStaffDirect(assignedStaff, notifyText, leadId);
@@ -847,6 +849,7 @@ async function handleServiceHandoff({ collected, session, platform, userId, cust
     "วันที่นัด: " + (dateStr || "ยังไม่ระบุ") + "\n" +
     "รุ่นรถ/อาการ: " + (collected.model_or_issue || "-") + "\n" +
     "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
     "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยนะคะ)\n" +
     "Booking ID: " + bookingId;
 
