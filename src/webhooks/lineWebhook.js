@@ -222,7 +222,7 @@ async function handleAckByText(userId) {
       return;
     }
     const pending = await store.getPendingRefsForStaff(staff.name, staff.branchId, null);
-    if (pending.length === 0) {
+    if (pending.length === 0 || !pending[0] || !pending[0].refId) {
       await line.pushMessage(userId, "ตอนนี้ไม่มีงานค้างที่ต้องรับทราบแล้วนะคะ ✅");
       return;
     }
@@ -237,6 +237,12 @@ async function handleAckByText(userId) {
 // แจ้งผลกลับพร้อมเลขที่งานเสมอ (กันสับสนว่ารับทราบงานไหนไปแล้วบ้าง) และถ้ายังมีงานอื่นค้างไม่รับทราบอยู่อีก แจ้งจำนวนที่เหลือให้รู้ด้วย
 // รองรับทั้ง lead (ขาย/เทิร์นรถ/ทั่วไป ขึ้นต้น LD-) และ booking (นัดซ่อม ขึ้นต้น BK-) แยกว่าจะรับทราบฝั่งไหนจาก prefix ของ id เอง
 async function acknowledgeAndReply(userId, refId) {
+  // กันเหนียว: กรณี refId หลุดมาว่าง/undefined (เช่น ข้อมูลตกหล่นในชีต) ไม่ให้ crash ทั้งฟังก์ชัน
+  if (!refId) {
+    console.error("[lineWebhook] acknowledgeAndReply error: refId ว่างเปล่า");
+    await line.pushMessage(userId, "ขอโทษนะคะ ไม่พบเลขที่งานที่จะรับทราบ รบกวนลองพิมพ์ \"รับทราบแล้ว\" ใหม่อีกครั้งนะคะ 🙏");
+    return;
+  }
   const isBooking = refId.startsWith("BK-");
   try {
     const result = isBooking ? await store.acknowledgeBooking(refId) : await store.acknowledgeLead(refId);
