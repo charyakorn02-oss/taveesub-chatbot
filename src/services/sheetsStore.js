@@ -589,6 +589,58 @@ async function deleteSessionData(sessionKey) {
   if (row) await row.delete();
 }
 
+// --- Pending batches (ข้อความลูกค้าที่พิมพ์เข้ามาแล้วรอ debounce ~1 นาทีก่อนบอทจะรวมตอบทีเดียว ตาม lineWebhook.js) ---
+// เดิมเก็บแค่ใน memory เฉยๆ ถ้าเซิร์ฟเวอร์รีสตาร์ทพอดีตอนลูกค้ากำลังพิมพ์อยู่ในช่วงรอนี้ ข้อความนั้นจะหายไปเงียบๆ
+// โดยไม่มีการตอบกลับเลย (ลูกค้าเห็นบอทเงียบหายไปดื้อๆ) -> เก็บสำรองไว้ที่นี่ด้วย แล้วให้ server.js เรียกกู้คืนตอนบูตเครื่องทุกครั้ง
+async function getOrCreatePendingBatchesSheet(doc) {
+  let sheet = doc.sheetsByTitle['PendingBatches'];
+  if (!sheet) {
+    sheet = await doc.addSheet({ title: 'PendingBatches', headerValues: ['sessionKey', 'textsJson', 'updatedAt'] });
+  }
+  return sheet;
+}
+
+async function savePendingBatch(sessionKey, texts) {
+  const doc = await getDoc();
+  const sheet = await getOrCreatePendingBatchesSheet(doc);
+  const rows = await sheet.getRows();
+  const row = rows.find((r) => r.get('sessionKey') === sessionKey);
+  const textsJson = JSON.stringify(texts);
+  const now = new Date().toISOString();
+  if (row) {
+    row.set('textsJson', textsJson);
+    row.set('updatedAt', now);
+    await row.save();
+  } else {
+    await sheet.addRow({ sessionKey, textsJson, updatedAt: now });
+  }
+}
+
+async function clearPendingBatch(sessionKey) {
+  const doc = await getDoc();
+  const sheet = await getOrCreatePendingBatchesSheet(doc);
+  const rows = await sheet.getRows();
+  const row = rows.find((r) => r.get('sessionKey') === sessionKey);
+  if (row) await row.delete();
+}
+
+// เรียกครั้งเดียวตอนเซิร์ฟเวอร์เพิ่งบูต เพื่อดึงข้อความที่ค้างจากตอนก่อนรีสตาร์ททั้งหมดกลับมาประมวลผลต่อ
+async function getAllPendingBatches() {
+  const rows = await getRows('PendingBatches');
+  return rows
+    .map(rowToObject)
+    .filter((r) => r.sessionKey && r.textsJson)
+    .map((r) => {
+      try {
+        return { sessionKey: r.sessionKey, texts: JSON.parse(r.textsJson) };
+      } catch (err) {
+        console.error('[sheetsStore] getAllPendingBatches JSON parse error:', err.message);
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
 module.exports = {
   getActiveBranches,
   getBranchById,
@@ -627,4 +679,7 @@ module.exports = {
   getSessionData,
   saveSessionData,
   deleteSessionData,
+  savePendingBatch,
+  clearPendingBatch,
+  getAllPendingBatches,
 };
