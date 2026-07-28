@@ -11,6 +11,8 @@ const FALLBACK_LIMIT = 2;
 const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา/;
 // ลูกค้าแจ้งว่า Lead ก่อนหน้านี้ถูกส่งผิดแผนก (เช่น ต้องการอะไหล่/บริการ แต่ดันไปเข้าคิวเซลฝ่ายขาย) ใช้คู่กับ session.lastLead
 const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผิดคน|ผิดแผนก|ไม่ใช่ฝ่ายขาย|ไม่ใช่เซล|ไม่ใช่แผนกขาย|ส่งผิด/;
+// ลูกค้าตอบยืนยันว่าจะใช้ข้อมูลเดิม (สาขา/เบอร์) ที่เคยติดต่อร้านไว้ก่อนหน้านี้ต่อ ใช้คู่กับ session.pendingHistoryConfirm
+const SAME_AS_BEFORE_KEYWORDS = /เหมือนเดิม|ที่เดิม|เบอร์เดิม|สาขาเดิม|อันเดิม|ข้อมูลเดิม|^ใช่ค่ะ$|^ใช่ครับ$|^ใช่$|^ยืนยัน|^ตกลง|^โอเค|^ok/i;
 
 function containsHighIntentKeyword(text) {
   if (!text) return false;
@@ -175,6 +177,40 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     return handleLeadReroute({ collected, session, rawMessage, platform, userId, customerName });
   }
 
+  // เช็คประวัติลูกค้าเก่าจาก Sheets (ครั้งเดียวต่อเซสชัน) เผื่อลูกค้าคนนี้เคยติดต่อร้านมาก่อน (คนละวัน/คนละเซสชันกับตอนนี้)
+  // เอาไว้ใช้ถามยืนยันสาขา/เบอร์เดิมด้านล่างเท่านั้น ไม่ได้เอามาข้ามคำถามไปเฉยๆ (ต้องถามยืนยันทุกครั้งเสมอ แม้เป็นลูกค้าประจำที่เคยมาแล้ว)
+  if (!session.historyChecked) {
+    session.historyChecked = true;
+    try {
+      session.knownHistory = await store.getLatestCustomerRecord(userId);
+    } catch (err) {
+      console.error("[router] getLatestCustomerRecord error:", err.message);
+      session.knownHistory = null;
+    }
+  }
+
+  // รอบก่อนเพิ่งถามยืนยันสาขา/เบอร์เดิมไป (จาก session.pendingHistoryConfirm ที่ตั้งไว้ด้านล่าง) -> เช็คคำตอบรอบนี้ก่อนไปต่อ
+  // ลูกค้ายืนยันว่าใช้ของเดิม (และไม่ได้พิมพ์ข้อมูลใหม่มาแทนที่ในข้อความเดียวกัน) ให้เติมสาขา/เบอร์เดิมเข้า collected ให้เลย
+  // ถ้าลูกค้าพิมพ์ข้อมูลใหม่มาแทน Claude จะ extract ใส่ collected ให้เองจาก analysis ที่ merge ไว้ด้านบนแล้วตามปกติ ไม่ต้องทำอะไรเพิ่ม
+  if (session.pendingHistoryConfirm) {
+    const pendingHist = session.pendingHistoryConfirm;
+    session.pendingHistoryConfirm = null;
+    if (SAME_AS_BEFORE_KEYWORDS.test(rawMessage || "")) {
+      if (pendingHist.phone && !collected.phone) {
+        collected.phone = pendingHist.phone;
+      }
+      if (pendingHist.branchId && !collected.location_text && !collected.requested_staff_name) {
+        if (collected.intent_category === "service") {
+          session.confirmedServiceBranchId = pendingHist.branchId;
+          session.serviceBranchIntroDone = true;
+        } else {
+          session.confirmedGeneralBranchId = pendingHist.branchId;
+          session.locationBranchIntroDone = true;
+        }
+      }
+    }
+  }
+
   // เช็คทันทีที่มีที่อยู่ลูกค้าแล้ว (เฉพาะซื้อรถใหม่ ไม่มีชื่อเซลที่ระบุ ยังไม่ได้เลือกวิธีรับรถ) -> ค้นสาขาใกล้สุดจริงจาก Google Maps เลย
   if (
     collected.intent_category === "buying_new" &&
@@ -256,7 +292,30 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   const needsBranchInfo =
     (effectiveIntent === "service" || effectiveIntent === "trade_in" || effectiveIntent === "buying_new") &&
     !collected.location_text &&
-    !collected.requested_staff_name;
+    !collected.requested_staff_name &&
+    !session.confirmedServiceBranchId &&
+    !session.confirmedGeneralBranchId;
+
+  // มีประวัติลูกค้าเก่า (เคยติดต่อร้านมาก่อน) และตอนนี้ยังต้องการข้อมูลสาขา/เบอร์อยู่ แต่ยังไม่เคยถามยืนยันข้อมูลเดิมในเซสชันนี้เลย
+  // -> ถามยืนยันก่อนเสมอทุกครั้ง (ไม่ปล่อยผ่านเงียบๆ แม้เป็นลูกค้าประจำที่เคยมาแล้ว) พร้อมโชว์รายละเอียดเดิมให้ลูกค้าดูประกอบการตัดสินใจ
+  if (
+    session.knownHistory &&
+    !session.historyConfirmAsked &&
+    (effectiveIntent === "service" || effectiveIntent === "trade_in" || effectiveIntent === "buying_new") &&
+    (needsBranchInfo || !collected.phone)
+  ) {
+    session.historyConfirmAsked = true;
+    const hist = session.knownHistory;
+    const histBranch = hist.branchId ? await store.getBranchById(hist.branchId) : null;
+    const detailParts = [];
+    if (histBranch) detailParts.push(`สาขา ${histBranch.name}`);
+    if (hist.phone) detailParts.push(`เบอร์ ${hist.phone}`);
+    if (detailParts.length > 0) {
+      session.fallbackCount = 0;
+      session.pendingHistoryConfirm = { branchId: histBranch ? histBranch.id : null, phone: hist.phone || null };
+      return `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
+    }
+  }
 
   // ซ่อมรถ (service) ต้องมีทั้งเบอร์โทร (phone) วันที่+ช่วงเวลาที่จะเข้า (preferred_date) และรู้สาขา/ช่างประจำ เก็บครบก่อนเสมอ 100% ทุกกรณี
   // ห้ามข้ามแม้เจอ high_intent_keyword หรือค้าง fallback ครบรอบแล้วก็ตาม กันเคสจองคิวซ่อมแบบไม่มีเบอร์/ไม่มีวันนัดที่ชัดเจน/ไม่รู้สาขาหลุดไปถึงทีมช่าง
@@ -466,8 +525,14 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     }
     assignedBranch = resolved.branch;
   } else {
-    // trade_in: ต้องมาสาขาเสมอ -> แค่ถามตรงๆ ว่าสะดวกนำรถเข้าสาขาไหน แล้ว match ชื่อสาขาจากคำตอบลูกค้า
-    assignedBranch = await resolveBranchDirect(collected);
+    // trade_in: ต้องมาสาขาเสมอ -> ถ้าเพิ่งยืนยันใช้สาขาเดิมจากประวัติลูกค้าไปแล้ว (session.confirmedGeneralBranchId) ใช้สาขานั้นตรงๆ ไม่ต้องถามซ้ำ
+    // ไม่งั้นแค่ถามตรงๆ ว่าสะดวกนำรถเข้าสาขาไหน แล้ว match ชื่อสาขาจากคำตอบลูกค้า
+    if (session.confirmedGeneralBranchId) {
+      const branches = await store.getActiveBranches();
+      assignedBranch = branches.find((b) => b.id === session.confirmedGeneralBranchId) || (await resolveBranchDirect(collected));
+    } else {
+      assignedBranch = await resolveBranchDirect(collected);
+    }
   }
 
   if (!assignedStaff && assignedBranch) {
@@ -594,6 +659,12 @@ async function resolveBranchDirect(collected) {
 // - อยู่นอก กทม./ปทุมธานี (หรือหาพิกัดไม่ได้) -> ส่งสำนักงานใหญ่ (สนญ) รันคิวทันที ไม่ถามต่อ
 async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessage }) {
   const branches = await store.getActiveBranches();
+
+  // เพิ่งยืนยันใช้สาขาเดิมจากประวัติลูกค้าไปแล้ว (ดู session.pendingHistoryConfirm ใน handleTurn) -> ใช้สาขานั้นตรงๆ ไม่ต้องเดา/ถามซ้ำ
+  if (session.confirmedGeneralBranchId) {
+    const forced = branches.find((b) => b.id === session.confirmedGeneralBranchId);
+    if (forced) return { branch: forced };
+  }
 
   // รอบก่อนเคยแนะนำ 2 สาขาให้เลือกไว้ (จากขั้นตอน introduceNearestBranches หรือจากรอบนี้เอง) -> รอบนี้เช็คว่าลูกค้าเลือกสาขาไหน
   if (session.pendingBranchChoiceIds && session.pendingBranchChoiceIds.length > 0) {
