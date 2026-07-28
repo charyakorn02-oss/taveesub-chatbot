@@ -22,9 +22,10 @@ const MAX_HISTORY_MESSAGES = 12;
  * @param {Array<{role: "user"|"assistant", content: string}>} history ประวัติแชท (ไม่รวมข้อความล่าสุด)
  * @param {string} latestMessage ข้อความล่าสุดจากลูกค้า
  * @param {number} fallbackCount จำนวนครั้งที่บอทงงมาก่อนหน้า (ส่งไปให้ Claude รับรู้บริบท)
+ * @param {object} collected ข้อมูลที่เก็บสะสมไว้แล้วใน session (เช่น ชื่อ/เบอร์/สาขา/รุ่นรถ) กันลืมตอน history ถูกตัดทิ้งไปเพราะยาวเกิน
  * @returns {Promise<object>} JSON ที่ Claude ตอบกลับมา (parse แล้ว)
  */
-async function analyzeMessage(history, latestMessage, fallbackCount = 0) {
+async function analyzeMessage(history, latestMessage, fallbackCount = 0, collected = null) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน .env");
@@ -32,14 +33,34 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0) {
 
   const system = await buildSystemPrompt();
   const trimmedHistory = history.length > MAX_HISTORY_MESSAGES ? history.slice(-MAX_HISTORY_MESSAGES) : history;
+
+  // สรุปข้อมูลที่เก็บไว้แล้วใน session ให้ Claude เห็นชัดๆ ทุกรอบ ไม่ต้องพึ่งแค่ history (ที่ถูกตัดทิ้งได้ถ้าคุยยาว)
+  // กันบั๊ก "บอทลืม" ที่แท้จริงคือ Claude ไม่เห็นว่ามีข้อมูลนี้เก็บไว้แล้ว เลยถามซ้ำ/สับสนว่าคุยถึงไหนแล้ว
+  const knownFacts = [];
+  if (collected) {
+    if (collected.customer_name) knownFacts.push(`ชื่อลูกค้า: ${collected.customer_name}`);
+    if (collected.phone) knownFacts.push(`เบอร์โทร: ${collected.phone}`);
+    if (collected.intent_category) knownFacts.push(`เรื่องที่คุย: ${collected.intent_category}`);
+    if (collected.location_text) knownFacts.push(`พื้นที่/ที่อยู่ที่แจ้งไว้: ${collected.location_text}`);
+    if (collected.model_or_issue) knownFacts.push(`รุ่นรถ/อาการที่สนใจ: ${collected.model_or_issue}`);
+    if (collected.delivery_preference) knownFacts.push(`วิธีรับรถ: ${collected.delivery_preference}`);
+    if (collected.requested_staff_name) knownFacts.push(`ชื่อพนักงานที่ลูกค้าระบุ: ${collected.requested_staff_name}`);
+    if (collected.preferred_date) knownFacts.push(`วันที่นัดหมาย: ${collected.preferred_date}`);
+  }
+  const knownFactsNote =
+    knownFacts.length > 0
+      ? `[ข้อมูลที่เก็บไว้แล้วจากการคุยก่อนหน้า อย่าถามซ้ำเรื่องที่มีอยู่แล้วในนี้:\n${knownFacts.join("\n")}]\n\n`
+      : "";
+
   const messages = [
     ...trimmedHistory,
     {
       role: "user",
       content:
-        fallbackCount > 0
+        knownFactsNote +
+        (fallbackCount > 0
           ? `[หมายเหตุ: บอทตอบไม่เข้าใจมาแล้ว ${fallbackCount} ครั้ง ถ้ายังไม่เข้าใจอีก ให้ตั้ง fallback = true]\n${latestMessage}`
-          : latestMessage,
+          : latestMessage),
     },
   ];
 
