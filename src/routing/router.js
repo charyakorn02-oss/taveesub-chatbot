@@ -189,6 +189,28 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     return handleLeadReroute({ collected, session, rawMessage, platform, userId, customerName });
   }
 
+  // รอบก่อนเคยถามลูกค้าว่า "อยากเปลี่ยนไปสาขาไหน" ค้างไว้ (จาก handleLeadBranchChange ด้านล่าง) -> รอบนี้เช็คคำตอบก่อนอย่างอื่นทั้งหมด
+  // กันบั๊กที่เจอจริง: ถ้าไปเข้าเงื่อนไข pendingBranchChoiceIds ทั่วไปด้านล่างก่อน จะแค่บันทึกสาขาไว้เฉยๆ ไม่ได้ยกเลิก Lead เดิม/สร้างใหม่ให้จริง
+  if (session.pendingLeadBranchChange && session.pendingBranchChoiceIds && session.pendingBranchChoiceIds.length > 0) {
+    const branchesForChange = await store.getActiveBranches();
+    const candidates = session.pendingBranchChoiceIds.map((id) => branchesForChange.find((b) => b.id === id)).filter(Boolean);
+    const matched = matchBranchFromText(rawMessage || "", candidates.map((b) => ({ branchId: b.id, branchName: b.name })));
+    if (matched) {
+      session.fallbackCount = 0;
+      return finalizeLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName, newBranchId: matched.branchId });
+    }
+    const names = candidates.map((b) => b.name).join(" หรือ ");
+    return `รบกวนแอดมินขอทราบอีกครั้งนะคะ พี่สะดวกเปลี่ยนไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+  }
+
+  // ลูกค้าที่มี Lead ซื้อรถใหม่/เทิร์นรถอยู่แล้ว (session.lastLead) แล้วขอ "เปลี่ยนสาขา" ภายหลัง (เช่น ไม่สะดวกสาขาที่ส่งไปให้)
+  // -> ต้องยกเลิก Lead เดิมจริงๆ (คืนคิวให้เซลคนเดิม แจ้งเซลคนเดิมว่ายกเลิก) แล้วค่อยสร้างใหม่ที่สาขาที่ถูกต้อง ห้ามปล่อยให้มี Lead ซ้ำซ้อน
+  // 2 ใบที่สาขาเดิมเหมือนเดิมทั้งที่ลูกค้าขอเปลี่ยนไปแล้ว (บั๊กที่เจอจริง)
+  if (session.lastLead && BRANCH_CHANGE_KEYWORDS.test(rawMessage || "")) {
+    session.fallbackCount = 0;
+    return handleLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName });
+  }
+
   // เช็คประวัติลูกค้าเก่าจาก Sheets (ครั้งเดียวต่อเซสชัน) เผื่อลูกค้าคนนี้เคยติดต่อร้านมาก่อน (คนละวัน/คนละเซสชันกับตอนนี้)
   // เอาไว้ใช้ถามยืนยันสาขา/เบอร์เดิมด้านล่างเท่านั้น ไม่ได้เอามาข้ามคำถามไปเฉยๆ (ต้องถามยืนยันทุกครั้งเสมอ แม้เป็นลูกค้าประจำที่เคยมาแล้ว)
   if (!session.historyChecked) {
@@ -667,7 +689,8 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} ${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
       : "";
 
-  return `เรียบร้อยค่ะ! แอดมินส่งข้อมูลของ${nameGreeting}ให้ทีมงานเรียบร้อยแล้วนะคะ 😊 ${deliveryLine}เดี๋ยวจะมีเซล ${assignedStaff.name} (${assignedStaff.phone || "รอเบอร์ติดต่อ"}) ติดต่อไปนะคะ กรุณารอสักครู่นะคะ${tradeInPriceNote}${addLineNote}\n\nขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏`;
+  // ปรับให้อบอุ่น เป็นกันเองมากขึ้นตามหลักจิตวิทยาการขาย ระบุชื่อสาขาให้ชัดเจนด้วย (ไม่ใช่แค่ชื่อ+เบอร์เซลลอยๆ ห้วนๆ)
+  return `เรียบร้อยค่ะ${nameGreeting ? " " + nameGreeting : ""}! 🙏 ขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 😊 แอดมินส่งข้อมูลของพี่ให้ทีมงาน${assignedBranch.name}เรียบร้อยแล้วนะคะ ${deliveryLine}เดี๋ยวจะมีเซลชื่อ ${assignedStaff.name} จากสาขานี้ติดต่อกลับไปหาพี่เร็วๆ นี้เลยนะคะ (เบอร์เซล: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}) รบกวนรอสักครู่นะคะ${tradeInPriceNote}${addLineNote}`;
 }
 
 // หาสาขาให้ลูกค้า -> ใช้ตอน (1) ระบุชื่อเซล/ขอคุยกับพนักงาน แต่ระบบไม่รู้จักตัวตน หรือ (2) ลูกค้าเทิร์นรถที่บอกตรงๆ
@@ -923,6 +946,83 @@ async function handleLeadReroute({ collected, session, rawMessage, platform, use
   session.serviceBranchIntroDone = false;
 
   return "ขอโทษด้วยนะคะ 🙏 แอดมินยกเลิกคิวเดิมที่ส่งผิดแผนกให้แล้วนะคะ รบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่/บริการซ่อม หรือเรื่องซื้อ-เทิร์นรถคะ แอดมินจะส่งให้ทีมที่ถูกต้องทันทีเลยค่ะ";
+}
+
+// ลูกค้าที่มี Lead ซื้อรถใหม่/เทิร์นรถอยู่แล้ว (session.lastLead) ขอเปลี่ยนไปสาขาอื่น (เช่น "ขอเปลี่ยนสาขา" ตามด้วย "มีที่ไหนใกล้ผมสุด")
+// เดิมไม่มีการจัดการเคสนี้เลย ทำให้ระบบเงียบๆ สร้าง Lead ใหม่ซ้ำที่ "สาขาเดิม" อีกใบ (ไม่ตอบคำถามเรื่องสาขาใกล้สุดเลยด้วย) -> แก้ให้ยกเลิก
+// Lead เดิมจริงๆ ก่อน แล้วค่อยหาสาขาใหม่ให้ (จับชื่อสาขาตรงๆ ก่อน ถ้าไม่มีค่อยหาใกล้สุดจากพิกัดที่เคยแจ้งไว้ ไม่นับสาขาเดิม)
+async function handleLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName }) {
+  const oldLead = session.lastLead;
+  const branches = await store.getActiveBranches();
+  const otherBranches = branches.filter((b) => b.id !== oldLead.branchId);
+
+  let newBranch = matchBranchFromText(rawMessage || "", otherBranches.map((b) => ({ branchId: b.id, branchName: b.name })));
+
+  if (!newBranch && collected.location_text) {
+    const geo = await geocode(collected.location_text);
+    if (geo && isServiceArea(geo.province)) {
+      const ranked = otherBranches
+        .filter((b) => b.lat && b.long)
+        .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+      const top2 = ranked.slice(0, 2).map((r) => r.branch);
+      if (top2.length === 1) {
+        newBranch = { branchId: top2[0].id, branchName: top2[0].name };
+      } else if (top2.length > 1) {
+        session.pendingLeadBranchChange = true;
+        session.pendingBranchChoiceIds = top2.map((b) => b.id);
+        const names = top2.map((b) => b.name).join(" หรือ ");
+        return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุด (ไม่นับสาขาเดิม) มี 2 สาขาเลยคือ ${names} พี่สะดวกเปลี่ยนไปสาขาไหนดีคะ`;
+      }
+    }
+  }
+
+  if (!newBranch) {
+    const names = otherBranches.map((b) => b.name).join(" หรือ ");
+    session.pendingLeadBranchChange = true;
+    session.pendingBranchChoiceIds = otherBranches.map((b) => b.id);
+    return `รบกวนแอดมินขอทราบอีกครั้งนะคะ พี่อยากเปลี่ยนไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+  }
+
+  return finalizeLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName, newBranchId: newBranch.branchId });
+}
+
+// ยกเลิก Lead เดิมจริงๆ (คืนคิวให้เซลคนเดิม แจ้งเซลคนเดิมว่ายกเลิกแล้ว) แล้วสร้าง Lead ใหม่ที่สาขาที่ลูกค้าเพิ่งเลือก
+async function finalizeLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName, newBranchId }) {
+  const oldLead = session.lastLead;
+
+  await store.cancelLead(oldLead.leadId);
+  if (oldLead.intentCategory === "trade_in") {
+    await store.decrementOpenTradeInCount(oldLead.staffId);
+  } else {
+    await store.decrementOpenLeadsCount(oldLead.staffId);
+  }
+  const oldStaff = await store.findStaffById(oldLead.staffId);
+  if (oldStaff) {
+    await notifyStaffDirect(
+      oldStaff,
+      "❌ ยกเลิก Lead (ลูกค้าขอเปลี่ยนไปสาขาอื่นแทน)\nLead ID เดิม: " + oldLead.leadId,
+      oldLead.leadId
+    );
+  }
+
+  session.confirmedGeneralBranchId = newBranchId;
+  session.pendingBranchChoiceIds = null;
+  session.pendingLeadBranchChange = false;
+  session.lastLead = null;
+  session.fallbackCount = 0;
+
+  return handleSalesHandoff({
+    collected,
+    session,
+    rawMessage,
+    intent: oldLead.intentCategory || collected.intent_category || "buying_new",
+    platform,
+    userId,
+    customerName,
+    replyContext: null,
+    highIntent: false,
+  });
 }
 
 function normalizeDate(text) {
