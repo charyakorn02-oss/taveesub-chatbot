@@ -171,4 +171,10 @@ app.listen(PORT, () => {
   console.log(`Facebook webhook: /webhook/facebook`);
   console.log(`LINE webhook: /webhook/line`);
   console.log(`Escalation check (lead + booking) ทุก ${ESCALATION_CHECK_INTERVAL_MS / 60000} นาที (threshold ${ESCALATION_THRESHOLD_MIN} นาที, เฉพาะในเวลาทำการ)`);
+
+  // กู้คืนข้อความลูกค้าที่ค้างอยู่จากตอนก่อนรีสตาร์ทเครื่องรอบก่อน (เช่น deploy โค้ดใหม่ชนจังหวะพอดีตอนลูกค้ากำลังพิมพ์อยู่)
+  // ทำหลังเซิร์ฟเวอร์พร้อมรับ request แล้วเสมอ ไม่บล็อกการ start เครื่อง
+  if (typeof lineWebhook.recoverPendingBatches === "function") {
+    lineWebhook.recoverPendingBatches().catch((err) => console.error("[server] recoverPendingBatches error:", err.message));
+  }
 });
