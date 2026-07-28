@@ -107,11 +107,17 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0) {
 }
 
 function tryParseJson(raw) {
+  // เผื่อ Claude ตอบมามีข้อความอื่นแนบมาก่อน/หลัง JSON (เช่น พูดนำก่อนแล้วค่อยตามด้วย ```json { ... } ```)
+  // ทั้งที่ system prompt สั่งให้ตอบ JSON ล้วนๆ แล้ว แต่บางครั้ง Claude ก็ยังแถมข้อความมาด้วยอยู่ดี
+  // ตัด code fence แบบ ```json ... ``` หรือ ``` ... ``` ออกก่อนเสมอ ก่อนพยายาม parse ตรงๆ
+  const stripped = raw.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, "$1").trim();
+
   try {
-    return JSON.parse(raw);
+    return JSON.parse(stripped);
   } catch (err) {
-    // เผื่อ Claude ตอบมามีข้อความอื่นแนบมาด้วย ลองดึงเฉพาะส่วนที่เป็น { ... } ออกมา
-    const match = raw.match(/\{[\s\S]*\}/);
+    // เผื่อยังมีข้อความอื่นปนอยู่นอก code fence ด้วย (ไม่ได้ใช้ code fence เลย) ลองดึงเฉพาะส่วนที่เป็น { ... } ออกมา
+    // ใช้ตัวสุดท้ายของ "}" ที่แมตช์กับ "{" ตัวแรกแบบ non-greedy เพื่อกันเคสมี "{" ปนอยู่ในข้อความพูดคุยก่อนหน้า JSON จริง
+    const match = stripped.match(/\{[\s\S]*\}/);
     if (match) {
       try {
         return JSON.parse(match[0]);
