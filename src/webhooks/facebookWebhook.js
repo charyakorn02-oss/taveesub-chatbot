@@ -75,9 +75,8 @@ async function handleMessengerText(psid, text) {
   }
 
   try {
-    const analysis = await claude.analyzeMessage(session.history, text, session.fallbackCount);
+    const analysis = await claude.analyzeMessage(session.history, text, session.fallbackCount, session.collected);
     session.history.push({ role: "user", content: text });
-    session.history.push({ role: "assistant", content: JSON.stringify(analysis) });
 
     // ดึงชื่อ Facebook ของลูกค้า เก็บไว้ครั้งเดียวใน session กันเรียก API ซ้ำทุกข้อความ
     if (!session.customerName) {
@@ -93,6 +92,8 @@ async function handleMessengerText(psid, text) {
       customerName: session.customerName,
     });
 
+    // เก็บ "ข้อความจริงที่ลูกค้าเห็น" (replyText) เป็นประวัติ ไม่ใช่ JSON ดิบจาก Claude - เหตุผลเดียวกับ lineWebhook.js
+    session.history.push({ role: "assistant", content: replyText });
     saveSession("facebook", psid, session);
     await facebook.sendMessage(psid, replyText);
   } catch (err) {

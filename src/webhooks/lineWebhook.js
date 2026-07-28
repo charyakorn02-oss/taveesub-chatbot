@@ -129,9 +129,8 @@ async function flushBatch(userId) {
   if (session.handedOff) return;
 
   try {
-    const analysis = await claude.analyzeMessage(session.history, combinedText, session.fallbackCount);
+    const analysis = await claude.analyzeMessage(session.history, combinedText, session.fallbackCount, session.collected);
     session.history.push({ role: "user", content: combinedText });
-    session.history.push({ role: "assistant", content: JSON.stringify(analysis) });
 
     if (!session.customerName) {
       session.customerName = await line.getProfile(userId);
@@ -145,6 +144,10 @@ async function flushBatch(userId) {
       userId,
       customerName: session.customerName,
     });
+    // สำคัญมาก: ต้องเก็บ "ข้อความจริงที่ลูกค้าเห็น" (replyText หลัง routing ปรับแล้ว) ไว้เป็นประวัติฝั่งบอท ไม่ใช่ JSON ดิบจาก Claude
+    // (analysis) เพราะ router.js มักเขียนทับ/สร้างข้อความเองใหม่ทั้งหมด (เช่น ตอนแนะนำสาขา, ตอน handoff) ทำให้ JSON เดิมไม่ตรงกับ
+    // สิ่งที่ลูกค้าเห็นจริง ถ้าเก็บ JSON ไว้ รอบถัดไป Claude จะอ่านประวัติตัวเองแล้วงงว่าเคยพูดอะไรไปจริงๆ กลายเป็นอาการ "ลืม"/ถามซ้ำ
+    session.history.push({ role: "assistant", content: replyText });
     saveSession("line", userId, session);
     await line.pushMessage(userId, replyText);
   } catch (err) {
