@@ -67,7 +67,7 @@ async function handleComment(commentValue) {
 }
 
 async function handleMessengerText(psid, text) {
-  const session = getSession("facebook", psid);
+  const session = await getSession("facebook", psid);
 
   if (session.handedOff) {
     // handoff ไปแล้ว ปล่อยให้พนักงานคุยต่อเอง บอทไม่ต้องแทรก

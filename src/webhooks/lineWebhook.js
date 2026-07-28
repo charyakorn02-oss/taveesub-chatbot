@@ -66,7 +66,7 @@ async function handleLineText(event) {
   }
 
   // ---- flow ปกติ: คุยกับลูกค้า ผ่าน Claude -> เข้าคิว batch รอรวมข้อความก่อนตอบ ----
-  const session = getSession("line", userId);
+  const session = await getSession("line", userId);
   if (session.handedOff) return;
 
   scheduleBatchedReply(userId);
@@ -103,7 +103,7 @@ async function flushBatch(userId) {
   if (!batch || batch.texts.length === 0) return;
 
   const combinedText = batch.texts.join("\n");
-  const session = getSession("line", userId);
+  const session = await getSession("line", userId);
   if (session.handedOff) return;
 
   try {
