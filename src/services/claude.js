@@ -83,7 +83,9 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
         ANTHROPIC_API_URL,
         {
           model: process.env.CLAUDE_MODEL || DEFAULT_MODEL,
-          max_tokens: 512, // JSON ตอบกลับสั้นๆ พอ ไม่จำเป็นต้องเผื่อ 1024 ลด output token ที่คิดเงินแพงกว่า input
+          // เพิ่มจาก 512 เป็น 1024: บั๊กที่เจอจริง - ตอนต้องตอบยาว (เช่น รายชื่อสาขาหลายบรรทัด + ชื่อสถานที่เต็มๆ)
+          // โดน max_tokens ตัดกลางคำ/กลางประโยคพอดี (เช่น "แฟชั่นไอ" ที่ควรเป็น "แฟชั่นไอส์แลนด์") ทำให้ข้อความไม่ครบและอาจทำ JSON ไม่สมบูรณ์ไปด้วย
+          max_tokens: 1024,
           // เปิด prompt caching: system prompt (FAQ/สาขา/รุ่นรถ/กติกาทั้งหมด) เปลี่ยนไม่บ่อย แคชไว้ 5 นาที
           // ทำให้ข้อความถัดๆ ไปของลูกค้าคนเดียวกัน (หรือคนอื่นที่ทักเข้ามาใกล้ๆ กัน) ไม่ต้องจ่ายเต็มราคาซ้ำทุกครั้ง
           system: [
