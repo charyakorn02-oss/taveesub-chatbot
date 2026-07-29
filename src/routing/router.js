@@ -334,8 +334,9 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
         return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกนำรถเข้าซ่อมสาขาไหนดีระหว่าง ${names} คะ 🙏`;
       }
       session.pendingServiceBranchIds = null;
-      session.confirmedServiceBranchId = candidates[0] ? candidates[0].id : null;
       session.pendingServiceBranchAskCount = 0;
+      // ตามที่ลูกค้าขอ: ไม่เลือกสาขาอัตโนมัติถ้าลูกค้าไม่ตอบ -> ตอบคำถามที่ลูกค้าถามไปก่อน แล้วค่อยถามเรื่องสาขาใหม่ตอนจำเป็นจริงๆ (ตอนจะส่งต่อ)
+      return analysis.reply_text_to_customer || "รับทราบค่ะ 😊 มีอะไรให้แอดมินช่วยเพิ่มเติมไหมคะ";
     }
   }
 
@@ -426,10 +427,20 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   }
 
   session.fallbackCount = 0;
-  return performHandoff({ collected, session, rawMessage, platform, userId, customerName, replyContext, highIntent });
+  return performHandoff({
+    collected,
+    session,
+    rawMessage,
+    platform,
+    userId,
+    customerName,
+    replyContext,
+    highIntent,
+    naturalReply: analysis.reply_text_to_customer,
+  });
 }
 
-async function performHandoff({ collected, session, rawMessage, platform, userId, customerName, replyContext, highIntent }) {
+async function performHandoff({ collected, session, rawMessage, platform, userId, customerName, replyContext, highIntent, naturalReply }) {
   // ถ้า Claude ไม่ได้จัดหมวดไว้เลย (เช่น รอบนี้ JSON หลุด/ไม่มั่นใจ) แต่ต้อง handoff แล้วเพราะเจอ high_intent_keyword
   // ให้เดาหมวดจากคำในข้อความดิบก่อน กันเคสชัดเจนอย่าง "ซ่อม/อะไหล่/จองคิว" หลุดไปเป็น general เฉยๆ ทั้งที่ควรเข้าคิวช่าง
   const intent = collected.intent_category || guessIntentFromText(rawMessage) || "general";
@@ -438,7 +449,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
   }
 
   if (intent === "buying_new" || intent === "trade_in") {
-    return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent });
+    return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent, naturalReply });
   }
   if (intent === "service") {
     // ถ้ารอบก่อนเคยแนะนำ/ยืนยันสาขาซ่อมใกล้บ้านลูกค้าไว้แล้ว (session.confirmedServiceBranchId) ให้ใช้สาขานั้นตรงๆ
@@ -447,7 +458,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
     if (session.confirmedServiceBranchId) {
       forcedBranch = await store.getBranchById(session.confirmedServiceBranchId);
     }
-    return handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch });
+    return handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch, naturalReply });
   }
   // general / ไม่รู้จะตอบยังไง (เช่น Claude ตอบไม่มั่นใจ ถามซ้ำจน fallback ครบ หรือลูกค้าขอคุยกับคนจริงแบบไม่เจาะจงหมวด)
   // ก่อนหน้านี้เคสนี้แค่ตอบลูกค้าเฉยๆ ไม่มีการสร้าง lead หรือแจ้งพนักงานเลย ทำให้เรื่องหลุดไปเงียบๆ -> แก้ให้สร้าง lead จริงและแจ้งหัวหน้าสาขาเสมอ
@@ -527,7 +538,7 @@ async function handleGeneralHandoff({ collected, rawMessage, platform, userId, c
   return "แอดมินรับเรื่องไว้แล้วนะคะ 😊 เดี๋ยวให้ทีมงานที่ดูแลเรื่องนี้ช่วยตอบละเอียดอีกทีนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
 }
 
-async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent }) {
+async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent, naturalReply }) {
   let assignedStaff = null;
   let assignedBranch = null;
   let routingMethod = "round_robin";
@@ -551,7 +562,9 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       session.pendingStaffCandidateIds = null;
       session.pendingStaffBranchAskCount = 0;
       collected.requested_staff_name = null;
-      assignedBranch = await resolveBranchDirect(collected);
+      // ตามที่ลูกค้าขอ: ไม่เลือกสาขาอัตโนมัติถ้าลูกค้าไม่ตอบ -> ตอบคำถามที่ลูกค้าถามไปก่อน (หรือ fallback สุภาพ)
+      // แล้วค่อยถามเรื่องสาขาใหม่ตอนจำเป็นจริงๆ (ตอนจะส่งต่อ) ในเทิร์นถัดไป ไม่บังคับ handoff เทิร์นนี้
+      return naturalReply || "รับทราบค่ะ 😊 มีอะไรให้แอดมินช่วยเพิ่มเติมไหมคะ";
     } else {
       assignedBranch = await store.getBranchById(matchedOption.branchId);
 
