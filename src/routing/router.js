@@ -324,9 +324,18 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       session.pendingServiceBranchIds = null;
       session.confirmedServiceBranchId = matched.branchId;
       session.fallbackCount = 0;
+      session.pendingServiceBranchAskCount = 0;
     } else {
-      const names = candidates.map((b) => b.name).join(" หรือ ");
-      return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกนำรถเข้าซ่อมสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+      // สำคัญมาก: ห้ามถามคำถามเดิมวนซ้ำไม่จบไม่สิ้น (บั๊กที่เจอจริง: ลูกค้าพิมพ์เรื่องอื่นมาเรื่อยๆ แต่บอทสนใจแต่จะถามสาขาต่อไป
+      // ไม่ยอมตอบสิ่งที่ลูกค้าถามเลย) ถามซ้ำได้แค่ 1 ครั้ง ถ้ายังไม่ตรงคำถามอีก ให้เลือกสาขาแรกที่แนะนำไปให้เลย แล้วปล่อยผ่านไปคุยเรื่องอื่นต่อ
+      session.pendingServiceBranchAskCount = (session.pendingServiceBranchAskCount || 0) + 1;
+      if (session.pendingServiceBranchAskCount <= 1) {
+        const names = candidates.map((b) => b.name).join(" หรือ ");
+        return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกนำรถเข้าซ่อมสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+      }
+      session.pendingServiceBranchIds = null;
+      session.confirmedServiceBranchId = candidates[0] ? candidates[0].id : null;
+      session.pendingServiceBranchAskCount = 0;
     }
   }
 
@@ -530,26 +539,38 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     const matchedOption = matchBranchFromText(rawMessage || "", options);
 
     if (!matchedOption) {
-      const names = options.map((o) => o.branchName).join(" หรือ ");
-      return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
-    }
-
-    assignedBranch = await store.getBranchById(matchedOption.branchId);
-
-    if (session.pendingStaffCandidateIds && session.pendingStaffCandidateIds.length > 0) {
-      const candidates = await Promise.all(session.pendingStaffCandidateIds.map((id) => store.findStaffById(id)));
-      // ใช้ staffServesBranch แทนเทียบ branchId ตรงๆ เพราะพนักงาน 1 คนอาจดูแลได้หลายสาขา (branchId เก็บเป็น "NM90,LL4")
-      const found = candidates.find(
-        (s) => s && store.staffServesBranch(s, matchedOption.branchId) && String(s.active).toUpperCase() === "TRUE"
-      );
-      if (found) {
-        assignedStaff = found;
-        routingMethod = "requested";
+      // สำคัญมาก: ห้ามถามคำถามเดิมวนซ้ำไม่จบไม่สิ้น (บั๊กที่เจอจริง: ลูกค้าพิมพ์เรื่องอื่นมาเรื่อยๆ เช่น ถามราคา/วิธีชำระเงิน
+      // แต่บอทสนใจแต่จะถามสาขาต่อไปเรื่อยๆ ไม่ยอมตอบสิ่งที่ลูกค้าถามเลยสักคำ) ถามซ้ำได้แค่ 1 ครั้ง ถ้ายังไม่ตรงคำถามอีก
+      // ให้เลิกตามหาเซลที่ระบุ (อาจพิมพ์ชื่อตัวเองมาโดยไม่ได้ตั้งใจ หรือแค่ทักทายเฉยๆ) แล้วปล่อยให้ระบบจัดหาสาขา/เซลให้แบบปกติแทน
+      session.pendingStaffBranchAskCount = (session.pendingStaffBranchAskCount || 0) + 1;
+      if (session.pendingStaffBranchAskCount <= 1) {
+        const names = options.map((o) => o.branchName).join(" หรือ ");
+        return `รบกวนแอดมินขอทราบอีกครั้งนะคะ สะดวกไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
       }
-    }
+      session.pendingStaffBranchOptions = null;
+      session.pendingStaffCandidateIds = null;
+      session.pendingStaffBranchAskCount = 0;
+      collected.requested_staff_name = null;
+      assignedBranch = await resolveBranchDirect(collected);
+    } else {
+      assignedBranch = await store.getBranchById(matchedOption.branchId);
 
-    session.pendingStaffBranchOptions = null;
-    session.pendingStaffCandidateIds = null;
+      if (session.pendingStaffCandidateIds && session.pendingStaffCandidateIds.length > 0) {
+        const candidates = await Promise.all(session.pendingStaffCandidateIds.map((id) => store.findStaffById(id)));
+        // ใช้ staffServesBranch แทนเทียบ branchId ตรงๆ เพราะพนักงาน 1 คนอาจดูแลได้หลายสาขา (branchId เก็บเป็น "NM90,LL4")
+        const found = candidates.find(
+          (s) => s && store.staffServesBranch(s, matchedOption.branchId) && String(s.active).toUpperCase() === "TRUE"
+        );
+        if (found) {
+          assignedStaff = found;
+          routingMethod = "requested";
+        }
+      }
+
+      session.pendingStaffBranchOptions = null;
+      session.pendingStaffCandidateIds = null;
+      session.pendingStaffBranchAskCount = 0;
+    }
   }
   // เงื่อนไขที่ 1: ลูกค้าเจาะจงชื่อเซล -> ค้นหาเฉพาะ role=sales ในระบบ (รองรับพิมพ์ชื่อคลาดเคลื่อนเล็กน้อย เช่น ขวัญ/ขวัน)
   else if (collected.requested_staff_name) {
