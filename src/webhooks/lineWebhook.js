@@ -7,7 +7,11 @@ const claude = require("../services/claude");
 const line = require("../services/line");
 const routing = require("../routing/router");
 const store = require("../services/store");
-const { getSession, saveSession } = require("../session/sessionStore");
+const { getSession, saveSession, resetSession } = require("../session/sessionStore");
+
+// ให้ลูกค้า (หรือแอดมินตอนทดสอบ) พิมพ์คำนี้เพื่อล้างบทสนทนา/ข้อมูลที่เก็บไว้ทั้งหมดทันที ไม่ต้องรอ TTL 6 ชม.
+// เผื่อกรณีอยากเริ่มคุยเรื่องใหม่จริงๆ หรือ session ค้างข้อมูลผิดๆ จากรอบทดสอบก่อนหน้า
+const RESET_KEYWORD_PATTERN = /^(เริ่มใหม่|รีเซ็ต|reset)$/i;
 
 // คำสั่งลับสำหรับพนักงานทุกตำแหน่ง (เซล/ทีมอะไหล่/หัวหน้าสาขา): พิมพ์ "ลงทะเบียน <รหัสพนักงาน> <PIN>" ทักมาที่ LINE OA
 // เพื่อผูก LINE userId ส่วนตัวของตัวเองเข้ากับรหัสพนักงานในแท็บ Staff (ทุกตำแหน่งอยู่แท็บเดียวกันหมดแล้ว แยกด้วยคอลัมน์ role)
@@ -79,6 +83,21 @@ async function handleLineText(event) {
   if (ackMatch) {
     const indexNum = ackMatch[1] ? Number(ackMatch[1]) : null;
     return handleAckByText(userId, indexNum);
+  }
+
+  // ---- flow รีเซ็ตบทสนทนา (พิมพ์ "เริ่มใหม่"/"รีเซ็ต") ----
+  // ล้างข้อมูลที่เก็บสะสมไว้ทั้งหมด (สาขา/ชื่อพนักงานที่เคยระบุ/หัวข้อที่คุย ฯลฯ) ทันที ไม่ต้องรอ TTL 6 ชม.
+  // กันปัญหาแบบที่เจอจริง: session ค้างข้อมูลรอบทดสอบเก่าปนกับบทสนทนาใหม่ จนบอทตอบงงๆ อิงเรื่องที่ไม่เกี่ยวข้อง
+  if (RESET_KEYWORD_PATTERN.test(text)) {
+    const existing = pendingBatches.get(userId);
+    if (existing && existing.timer) clearTimeout(existing.timer);
+    pendingBatches.delete(userId);
+    store.clearPendingBatch(`line:${userId}`).catch(() => {});
+    resetSession("line", userId);
+    try {
+      await line.pushMessage(userId, "รับทราบค่ะ เริ่มบทสนทนาใหม่ให้แล้วนะคะ 😊 มีอะไรให้แอดมินช่วยคะ?");
+    } catch (_) {}
+    return;
   }
 
   // ---- flow ปกติ: คุยกับลูกค้า ผ่าน Claude -> เข้าคิว batch รอรวมข้อความก่อนตอบ ----
