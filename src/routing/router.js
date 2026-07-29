@@ -8,7 +8,9 @@ const bitrix24 = require("../services/bitrix24");
 
 const HIGH_INTENT_KEYWORDS = ["จอง", "มัดจำ", "โอนเงิน", "จัดไฟแนนซ์", "ส่งเอกสาร"];
 const FALLBACK_LIMIT = 2;
-const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา/;
+// ขยายให้ครอบคลุมกรณีลูกค้าที่มี Lead อยู่แล้วถามถึงสาขาอื่น/สาขาใกล้ตัวเอง (เช่น "มีสาขาไหนบ้าง แถวๆ...ไปไหนใกล้สุด")
+// แม้จะไม่ได้พิมพ์คำว่า "เปลี่ยนสาขา" ตรงๆ ก็ตาม เพราะเข้าเงื่อนไขนี้ได้เฉพาะตอนมี session.lastLead อยู่แล้วเท่านั้น (ลูกค้าเก่า) จึงปลอดภัยที่จะตีความกว้างขึ้น
+const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา|สาขาไหนบ้าง|สาขาไหนใกล้|ใกล้ที่สุด|ใกล้สุด|สาขาอื่น/;
 const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผิดคน|ผิดแผนก|ไม่ใช่ฝ่ายขาย|ไม่ใช่เซล|ไม่ใช่แผนกขาย|ส่งผิด/;
 const SAME_AS_BEFORE_KEYWORDS = /เหมือนเดิม|ที่เดิม|เบอร์เดิม|สาขาเดิม|อันเดิม|ข้อมูลเดิม|^ใช่ค่ะ$|^ใช่ครับ$|^ใช่$|^ยืนยัน|^ตกลง|^โอเค|^ok/i;
 
@@ -114,6 +116,7 @@ async function introduceNearestServiceBranch(locationText, session) {
 
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   const collected = session.collected;
+  const oldLocationTextBeforeMerge = collected.location_text || null;
   const fieldsToMerge = [
     "customer_name",
     "model_or_issue",
@@ -139,6 +142,23 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   if (analysis.location_text) {
     session.locationSetForIntent = collected.intent_category;
+  }
+
+  // บั๊กที่เจอจริง: ลูกค้าเคยบอกที่อยู่/พื้นที่ไว้แล้ว ระบบยึดสาขาที่เคยจับคู่ไว้ (session.confirmedGeneralBranchId/confirmedServiceBranchId)
+  // ต่อไปเรื่อยๆ แม้ลูกค้าจะพิมพ์บอกที่อยู่ใหม่ที่ "ไม่ใช่ที่เดิม" มาในภายหลัง -> ต้องล้างสาขาที่เคยจับคู่ไว้ทิ้ง แล้วปล่อยให้ระบบ
+  // ค้นหา/แนะนำสาขาใหม่จากที่อยู่ล่าสุดที่ลูกค้าเพิ่งบอกแทน (ยึดที่อยู่ล่าสุดเสมอ ไม่ใช่ที่อยู่แรกที่เคยพิมพ์มา)
+  if (
+    analysis.location_text &&
+    oldLocationTextBeforeMerge &&
+    analysis.location_text.trim() !== oldLocationTextBeforeMerge.trim() &&
+    !SAME_AS_BEFORE_KEYWORDS.test(rawMessage || "")
+  ) {
+    session.confirmedGeneralBranchId = null;
+    session.confirmedServiceBranchId = null;
+    session.locationBranchIntroDone = false;
+    session.serviceBranchIntroDone = false;
+    session.pendingBranchChoiceIds = null;
+    session.pendingServiceBranchIds = null;
   }
 
   if (session.lastServiceBooking && BRANCH_CHANGE_KEYWORDS.test(rawMessage || "")) {
