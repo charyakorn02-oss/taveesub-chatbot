@@ -139,6 +139,38 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
   };
 }
 
+// Claude บางครั้งตอบ reply_text_to_customer เป็นข้อความหลายย่อหน้าโดยใช้ตัวขึ้นบรรทัดใหม่จริง แทนที่จะ escape ตามที่ JSON ต้องการ
+// ทำให้ JSON.parse พังทุกครั้ง (บั๊กที่เจอจริง: ลูกค้าถามหลายเรื่องในข้อความเดียว Claude ตอบยาวหลายย่อหน้า)
+// ฟังก์ชันนี้แปลง newline/carriage-return ที่อยู่ "ภายในสตริง" JSON ให้เป็น escape sequence ที่ถูกต้อง
+function sanitizeJsonNewlines(text) {
+  let result = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      result += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === String.fromCharCode(92)) {
+      result += ch;
+      escape = true;
+      continue;
+    }
+    if (ch === String.fromCharCode(34)) {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+    if (inString && (ch === "\n" || ch === "\r")) {
+      result += ch === "\n" ? "\\n" : "\\r";
+      continue;
+    }
+    result += ch;
+  }
+  return result;
+}
 function tryParseJson(raw) {
   // เผื่อ Claude ตอบมามีข้อความอื่นแนบมาก่อน/หลัง JSON (เช่น พูดนำก่อนแล้วค่อยตามด้วย ```json { ... } ```)
   // ทั้งที่ system prompt สั่งให้ตอบ JSON ล้วนๆ แล้ว แต่บางครั้ง Claude ก็ยังแถมข้อความมาด้วยอยู่ดี
@@ -146,14 +178,14 @@ function tryParseJson(raw) {
   const stripped = raw.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, "$1").trim();
 
   try {
-    return JSON.parse(stripped);
+    return JSON.parse(sanitizeJsonNewlines(stripped));
   } catch (err) {
     // เผื่อยังมีข้อความอื่นปนอยู่นอก code fence ด้วย (ไม่ได้ใช้ code fence เลย) ลองดึงเฉพาะส่วนที่เป็น { ... } ออกมา
     // ใช้ตัวสุดท้ายของ "}" ที่แมตช์กับ "{" ตัวแรกแบบ non-greedy เพื่อกันเคสมี "{" ปนอยู่ในข้อความพูดคุยก่อนหน้า JSON จริง
     const match = stripped.match(/\{[\s\S]*\}/);
     if (match) {
       try {
-        return JSON.parse(match[0]);
+        return JSON.parse(sanitizeJsonNewlines(match[0]));
       } catch (err2) {
         return null;
       }
