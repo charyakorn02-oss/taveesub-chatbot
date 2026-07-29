@@ -42,11 +42,14 @@ function normalizeBranchNameForMatch(name) {
     .trim();
 }
 
+// ดึงเลขทั้งหมดที่ปรากฏในข้อความ/ชื่อสาขา (เช่น "นวมินทร์ 90" -> ["90"], "สาขา 90" -> ["90"])
+function extractNumbers(str) {
+  return (str || "").match(/\d+/g) || [];
+}
 function matchBranchFromText(text, options) {
   if (!text) return null;
   const trimmed = text.trim();
-  return (
-    options.find((o) => {
+  const direct = options.find((o) => {
       const full = o.branchName || "";
       const core = normalizeBranchNameForMatch(full);
       return (
@@ -54,8 +57,21 @@ function matchBranchFromText(text, options) {
         (core && text.includes(core)) ||
         (core && trimmed.length >= 3 && full.includes(trimmed))
       );
-    }) || null
-  );
+  });
+  if (direct) return direct;
+
+  // กันบั๊กที่เจอจริง: ลูกค้าตอบสั้นๆ แค่เลขสาขา (เช่น "สาขา 90" หรือ "90" เฉยๆ) โดยไม่พิมพ์ชื่อเต็ม "นวมินทร์ 90"
+  // ทำให้จับคู่แบบชื่อเต็มด้านบนไม่เจอเลย กลายเป็นถามซ้ำวนไม่จบ -> ลองเทียบเลขในข้อความลูกค้ากับเลขในชื่อแต่ละตัวเลือกแทน
+  // ทำเฉพาะตอนมีตัวเลือกที่เลขตรงกันแค่ตัวเดียวเท่านั้น (กันเลขชนกันเวลามีหลายสาขาเลขซ้ำ)
+  const textNumbers = extractNumbers(text);
+  if (textNumbers.length > 0) {
+    const numMatches = options.filter((o) => {
+      const branchNumbers = extractNumbers(o.branchName || "");
+      return branchNumbers.some((n) => textNumbers.includes(n));
+    });
+    if (numMatches.length === 1) return numMatches[0];
+  }
+  return null;
 }
 
 async function introduceNearestBranches(locationText, session) {
