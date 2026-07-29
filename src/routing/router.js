@@ -518,7 +518,13 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       session.pendingStaffBranchAskCount = 0;
     }
   }
-  else if (collected.requested_staff_name) {
+  // กันบั๊กที่เจอจริง: requested_staff_name ดันเป็นชื่อเดียวกับชื่อลูกค้าเอง (เช่น ลูกค้าชื่อ "มาร์ค" บังเอิญมีเซลชื่อ "มาร์ค" ในระบบด้วย)
+  // ทำให้ระบบเข้าใจผิดว่าลูกค้ากำลังขอเซลคนนั้น ทั้งที่จริงๆ แค่ลูกค้าแนะนำชื่อตัวเองหรือ Claude สับสนดึงชื่อลูกค้ามาใส่ผิดฟิลด์
+  // ถ้าชื่อที่ระบุตรงกับชื่อลูกค้าเป๊ะๆ ให้ถือว่าไม่ได้ระบุชื่อเซลจริง (ปล่อยผ่านไปหาสาขาให้แบบปกติแทน)
+  else if (
+    collected.requested_staff_name &&
+    (!finalCustomerName || collected.requested_staff_name.trim().toLowerCase() !== finalCustomerName.trim().toLowerCase())
+  ) {
     const matches = await store.findStaffMatches(collected.requested_staff_name, "sales");
 
     if (matches.length === 1 && store.getStaffBranchIds(matches[0]).length <= 1) {
