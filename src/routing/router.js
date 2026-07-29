@@ -1,4 +1,4 @@
-// หัวใจของระบบ: ตัดสินใจว่าถามต่อ หรือจะส่งต่อ (handoff) ให้เซล/ช่าง พร้อมหาสาขา+พนักงานที่เหมาะสม
+หัวใจของระบบตัดสินใจว่าถามต่อหรือจะส่งต่อให้เซลช่างพร้อมหาสาขาพนักงานที่เหมาะสมจองมัดจำโอนเงินจัดไฟแนนซ์ส่งเอกสารเปลี่ยนสาขาเปลี่ยนที่ซ่อมขอเปลี่ยนสาขาสาขาอื่นแทนเปลี่ยนเป็นสาขาเปลี่ยนไปสาขาส่งผิดแผนกส่งผิดคนผิดแผนกไม่ใช่ฝ่ายขายไม่ใช่เซลไม่ใช่แผนกขายส่งผิดเหมือนเดิมที่เดิมเบอร์เดิมสาขาเดิมอันเดิมข้อมูลเดิมใช่ค่ะใช่ครับใช่ยืนยันตกลงโอเคซ่อมเช็คระยะอะไหล่คิวซ่อมนัดซ่อมเข้าศูนย์เทิร์นรถเทิร์นแลกรถขายรถเก่าซื้อรถออกรถจองรถดาวน์รถสนใจรุ่นซ่อมเช็คระยะอะไหล่คิวซ่อมนัดซ่อมเข้าศูนย์เทิร์นรถเทิร์นแลกรถขายรถเก่าซื้อรถออกรถจองรถดาวน์รถสนใจรุ่นคันใหม่รถใหม่สาขาแอดมินเช็คแผนที่ให้แล้วค่ะ😊สาขาที่ใกล้พี่ที่สุดคือค่ะพี่สะดวกมารับที่สาขานี้เองหรือสนใจให้จัดส่งถึงบ้านดีคะจัดส่งฟรีในระยะกมจากสาขาและทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะหรือแอดมินเช็คแผนที่ให้แล้วค่ะ😊ใกล้พี่ที่สุดมีสาขาเลยคือพี่สะดวกไปสาขาไหนดีคะหรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะจัดส่งฟรีในระยะกมจากสาขาและทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะขอบคุณที่แจ้งพื้นที่มานะคะ😊พอดีแอดมินเช็คแผนที่จากข้อมูลที่พี่ให้มายังไม่ชัดเจนพอที่จะเช็คสาขาใกล้พี่ที่สุดได้เลยค่ะถ้าสะดวกรบกวนพี่บอกรายละเอียดเพิ่มอีกนิดได้ไหมคะเช่นชื่อถนนแขวงเขตหรือจุดสังเกตใกล้เคียงแอดมินจะได้แนะนำสาขาที่ใกล้พี่ที่สุดให้ถูกต้องเลยค่ะเบื้องต้นนี่คือสาขาทั้งหมดของทวีทรัพย์นะคะพี่สะดวกไปรับรถที่สาขาไหนดีคะหรือสนใจให้จัดส่งถึงบ้านแทนก็ได้นะคะจัดส่งฟรีในระยะกมจากสาขาและทำสัญญาซื้อขายให้ฟรีทั่วประเทศค่ะแอดมินเช็คแผนที่ให้แล้วค่ะ😊สาขาที่ใกล้พี่ที่สุดคือค่ะสะดวกนำรถเข้าซ่อมที่สาขานี้เลยไหมคะหรือแอดมินเช็คแผนที่ให้แล้วค่ะ😊ใกล้พี่ที่สุดมีสาขาเลยคือสะดวกนำรถเข้าซ่อมสาขาไหนดีคะสำนักงานใหญ่หรือรบกวนแอดมินขอทราบอีกครั้งนะคะพี่สะดวกเปลี่ยนไปสาขาไหนดีระหว่างคะ🙏นำรถเข้ามาที่สาขานำรถเข้ารับบริการที่สาขาแอดมินเห็นว่าก่อนหน้านี้พี่แจ้งพื้นที่ไว้ว่าค่ะ😊ยังสะดวกแถวนั้นเหมือนเดิมไหมคะหรือจะเปลี่ยนพื้นที่ใหม่บอกแอดมินได้เลยนะคะหรือรบกวนแอดมินขอทราบอีกครั้งนะคะสะดวกนำรถเข้าซ่อมสาขาไหนดีระหว่างคะ🙏รับทราบค่ะ😊มีอะไรให้แอดมินช่วยเพิ่มเติมไหมคะสาขาเบอร์แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ😊ครั้งก่อนพี่ใช้และใช่ไหมคะพี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลยหรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะขอบคุณที่บอกแอดมินนะคะ😊เดี๋ยวแอดมินรับเรื่องต่อให้เลยนะคะขอทราบเบอร์ติดต่อกลับได้ไหมคะ🙏สำนักงานใหญ่แอดมินรับเรื่องไว้แล้วนะคะเดี๋ยวให้ทีมงานติดต่อกลับไปนะคะขอบคุณที่ทักมาคุยกับแอดมินนะคะ🙏คำถามที่แอดมินตอบเองไม่ได้ดูข้อความลูกค้าประกอบ❓เรื่องที่แอดมินบอทตอบเองไม่ได้ชื่อลูกค้าสาขาที่ใกล้ลูกค้าคำถามข้อความล่าสุดจากลูกค้าเบอร์ลูกค้า📎ลูกค้าส่งมาด้วยเปิดดูในแชทของลูกค้าโดยตรงสาขายังไม่ได้ลงทะเบียนหัวหน้าสาขาข้อความหลุดแอดมินรับเรื่องไว้แล้วนะคะ😊เดี๋ยวให้ทีมงานที่ดูแลเรื่องนี้ช่วยตอบละเอียดอีกทีนะคะขอบคุณที่ทักมาคุยกับแอดมินนะคะ🙏หรือรบกวนแอดมินขอทราบอีกครั้งนะคะสะดวกไปสาขาไหนดีระหว่างคะ🙏รับทราบค่ะ😊มีอะไรให้แอดมินช่วยเพิ่มเติมไหมคะหรือพบชื่อมากกว่าคนเลยค่ะ😊คุณดูแลหลายสาขาเลยค่ะ😊สะดวกไปสาขาไหนดีระหว่างคะหรือเบื้องต้นแอดมินไม่พบชื่อในระบบนะคะ🙏ขอทราบก่อนได้ไหมคะว่าพี่สะดวกไปสาขาไหนระหว่างคะขอโทษด้วยนะคะตอนนี้คิวเซลเต็มชั่วคราวแอดมินจะรีบให้ทีมงานติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ🙏🌟ลูกค้าประจำของวิธีรับรถชื่อลูกค้า⚠️เทิร์นรถแจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้นห้ามฟันธงราคาสุดท้ายทางแชทลูกค้าอาจส่งภาพรถคันเดิมมาให้ดูประกอบการประเมิน🔔ใหม่สาขารุ่นที่สนใจที่อยู่ลูกค้าเบอร์ลูกค้า📎ลูกค้าส่งมาด้วยเปิดดูในแชทของลูกค้าโดยตรงเรื่องจัดส่งถึงบ้านเรื่องรับรถที่สาขาคุณแอดไลน์ไว้คุยต่อได้เลยนะคะสามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซลเลยนะคะราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้ายเรียบร้อยค่ะ🙏ขอบคุณมากๆนะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ😊แอดมินส่งข้อมูลของพี่ให้ทีมงานเรียบร้อยแล้วนะคะเดี๋ยวจะมีเซลชื่อจากสาขานี้ติดต่อกลับไปหาพี่เร็วๆนี้เลยนะคะเบอร์เซลรอเบอร์ติดต่อรบกวนรอสักครู่นะคะสำนักงานใหญ่หรือรบกวนบอกแอดมินอีกครั้งนะคะสะดวกไปสาขาไหนดีระหว่างคะ🙏หรือแอดมินเช็คให้แล้วค่ะใกล้พี่สุดมีสาขาเลยคือสะดวกไปสาขาไหนดีคะ😊สำนักงานใหญ่สำนักงานใหญ่ขอโทษด้วยนะคะตอนนี้แอดมินหาสาขาที่รับนัดซ่อมให้ไม่ได้ชั่วคราวเดี๋ยวทีมงานจะติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ🙏ชื่อลูกค้า🔧นัดซ่อมใหม่สาขาวันที่นัดยังไม่ระบุรุ่นรถอาการเบอร์ลูกค้า📎ลูกค้าส่งมาด้วยเปิดดูในแชทของลูกค้าโดยตรงทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยนะคะคุณแอดไลน์ทีมอะไหล่ไว้คุยต่อได้เลยนะคะแอดมินรับข้อมูลนัดซ่อมของเรียบร้อยแล้วนะคะ😊วันที่เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆนี้นะคะขอบคุณที่ไว้วางใจนะคะ🙏หรือรบกวนแอดมินขอทราบอีกครั้งนะคะอยากเปลี่ยนไปสาขาไหนดีระหว่างคะ🙏❌ยกเลิกนัดซ่อมลูกค้าขอเปลี่ยนไปสาขาอื่นแทนสาขาเดิมเดิมช่วงเช้าช่วงบ่ายช่วงเย็นเช้าบ่ายเย็นโมงขอโทษด้วยนะคะ🙏รบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่บริการซ่อมหรือเรื่องซื้อเทิร์นรถคะแอดมินจะรีบส่งให้ทีมที่ถูกต้องทันทีเลยค่ะ❌ยกเลิกส่งผิดแผนกลูกค้าแจ้งว่าจริงๆเป็นเรื่องอื่นเดิมขอโทษด้วยนะคะ🙏แอดมินยกเลิกคิวเดิมที่ส่งผิดแผนกให้แล้วนะคะรบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่บริการซ่อมหรือเรื่องซื้อเทิร์นรถคะแอดมินจะส่งให้ทีมที่ถูกต้องทันทีเลยค่ะหรือแอดมินเช็คแผนที่ให้แล้วค่ะ😊ใกล้พี่ที่สุดไม่นับสาขาเดิมมีสาขาเลยคือพี่สะดวกเปลี่ยนไปสาขาไหนดีคะหรือรบกวนแอดมินขอทราบอีกครั้งนะคะพี่อยากเปลี่ยนไปสาขาไหนดีระหว่างคะ🙏❌ยกเลิกลูกค้าขอเปลี่ยนไปสาขาอื่นแทนเดิมนัดซ่อมลูกค้าเรื่องเลขที่⚠️มีงานค้างที่ยังไม่มีใครกดรับทราบอยู่ก่อนหน้านี้ด้วยนะคะงาน———————————พนักงานยังไม่ได้ลงทะเบียน⚠️เซลยังไม่ได้ลงทะเบียนไลน์สาขายังไม่ได้ลงทะเบียนหัวหน้าสาขาข้อความหลุดทีมอะไหล่ยังไม่ได้ลงทะเบียนสาขาไม่มีทีมอะไหล่ในระบบเลย⚠️ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์สาขายังไม่ได้ลงทะเบียนหัวหน้าสาขาข้อความหลุด// หัวใจของระบบ: ตัดสินใจว่าถามต่อ หรือจะส่งต่อ (handoff) ให้เซล/ช่าง พร้อมหาสาขา+พนักงานที่เหมาะสม
 "use strict";
 
 const store = require("../services/store");
@@ -667,4 +667,451 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     customerName: finalCustomerName,
     intentCategory: intent,
     modelOrIssue: collected.model_or_issue || null,
-    bran
+    branchId: assignedBranch.id,
+    staffName: assignedStaff.name,
+    staffPhone: assignedStaff.phone,
+    phone: collected.phone || null,
+    locationText: collected.location_text || null,
+    status: "new",
+  };
+
+  const leadId = await store.appendLead(lead);
+  try {
+    await bitrix24.createLead({ ...lead, id: leadId, routingMethod, highIntentKeyword: Boolean(highIntent) });
+  } catch (err) {
+    console.error("[router] bitrix24.createLead error:", err.message);
+  }
+
+  if (session) {
+    session.lastLead = {
+      leadId,
+      intentCategory: intent,
+      branchId: assignedBranch.id,
+      staffId: assignedStaff.id,
+      staffName: assignedStaff.name,
+    };
+  }
+
+  const badge = routingMethod === "requested" ? `🌟 ลูกค้าประจำของ ${assignedStaff.name}\n` : "";
+  const deliveryNote = collected.delivery_preference ? `วิธีรับรถ: ${collected.delivery_preference}\n` : "";
+  const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
+  const tradeInNote =
+    intent === "trade_in" ? "⚠️ เทิร์นรถ: แจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้น ห้ามฟันธงราคาสุดท้ายทางแชท ลูกค้าอาจส่งภาพรถคันเดิมมาให้ดูประกอบการประเมิน\n" : "";
+  const notifyText =
+    badge +
+    "🔔 Lead ใหม่ (" + platform + ")\n" +
+    customerNameNote +
+    tradeInNote +
+    "สาขา: " + assignedBranch.name + "\n" +
+    "รุ่นที่สนใจ: " + (collected.model_or_issue || "-") + "\n" +
+    deliveryNote +
+    "ที่อยู่ลูกค้า: " + (collected.location_text || "-") + "\n" +
+    "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
+    "Lead ID: " + leadId;
+
+  await notifyStaffDirect(assignedStaff, notifyText, leadId, assignedBranch.id);
+
+  const deliveryLine =
+    collected.delivery_preference === "home_delivery"
+      ? "เรื่องจัดส่งถึงบ้าน "
+      : collected.delivery_preference === "pickup_at_branch"
+      ? "เรื่องรับรถที่สาขา "
+      : "";
+  const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
+  const addLineNote = assignedStaff.lineAddUrl
+    ? `\n\nแอดไลน์ ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
+    : "";
+
+  const tradeInPriceNote =
+    intent === "trade_in"
+      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} ${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
+      : "";
+
+  return `เรียบร้อยค่ะ${nameGreeting ? " " + nameGreeting : ""}! 🙏 ขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 😊 แอดมินส่งข้อมูลของพี่ให้ทีมงาน${assignedBranch.name}เรียบร้อยแล้วนะคะ ${deliveryLine}เดี๋ยวจะมีเซลชื่อ ${assignedStaff.name} จากสาขานี้ติดต่อกลับไปหาพี่เร็วๆ นี้เลยนะคะ (เบอร์เซล: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}) รบกวนรอสักครู่นะคะ${tradeInPriceNote}${addLineNote}`;
+}
+
+async function resolveBranchDirect(collected) {
+  const branches = await store.getActiveBranches();
+  const hintText = `${collected.location_text || ""} ${collected.requested_staff_name || ""}`.trim();
+
+  if (hintText) {
+    const matched = matchBranchFromText(
+      hintText,
+      branches.map((b) => ({ branchId: b.id, branchName: b.name }))
+    );
+    if (matched) {
+      const matchedBranch = branches.find((b) => b.id === matched.branchId);
+      if (matchedBranch) return matchedBranch;
+    }
+  }
+
+  const geo = collected.location_text ? await geocode(collected.location_text) : null;
+  if (geo) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    if (ranked.length > 0) return ranked[0].branch;
+  }
+
+  return branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+}
+
+async function resolveAssignedBranchForBuyingNew({ collected, session, rawMessage }) {
+  const branches = await store.getActiveBranches();
+
+  if (session.confirmedGeneralBranchId) {
+    const forced = branches.find((b) => b.id === session.confirmedGeneralBranchId);
+    if (forced) return { branch: forced };
+  }
+
+  if (session.pendingBranchChoiceIds && session.pendingBranchChoiceIds.length > 0) {
+    const candidates = session.pendingBranchChoiceIds
+      .map((id) => branches.find((b) => b.id === id))
+      .filter(Boolean);
+    const matched = matchBranchFromText(
+      rawMessage || "",
+      candidates.map((b) => ({ branchId: b.id, branchName: b.name }))
+    );
+    if (matched) {
+      session.pendingBranchChoiceIds = null;
+      return { branch: candidates.find((b) => b.id === matched.branchId) };
+    }
+    const names = candidates.map((b) => b.name).join(" หรือ ");
+    return { clarifyingReply: `รบกวนบอกแอดมินอีกครั้งนะคะ สะดวกไปสาขาไหนดีระหว่าง ${names} คะ 🙏` };
+  }
+
+  const geo = collected.location_text ? await geocode(collected.location_text) : null;
+
+  if (geo && isServiceArea(geo.province)) {
+    const ranked = branches
+      .filter((b) => b.lat && b.long)
+      .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    if (collected.delivery_preference === "home_delivery") {
+      if (ranked.length > 0) return { branch: ranked[0].branch };
+    } else {
+      const top2 = ranked.slice(0, 2).map((r) => r.branch);
+      if (top2.length >= 2) {
+        session.pendingBranchChoiceIds = top2.map((b) => b.id);
+        const names = top2.map((b) => b.name).join(" หรือ ");
+        return { clarifyingReply: `แอดมินเช็คให้แล้วค่ะ ใกล้พี่สุดมี 2 สาขาเลยคือ ${names} สะดวกไปสาขาไหนดีคะ 😊` };
+      }
+      if (top2.length === 1) return { branch: top2[0] };
+    }
+  }
+
+  const hq = branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+  return { branch: hq };
+}
+
+async function handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch }) {
+  const branches = await store.getActiveBranches();
+  let assignedBranch = forcedBranch || null;
+  const finalCustomerName = resolveCustomerName(collected, customerName);
+
+  if (!assignedBranch) {
+    const geo = collected.location_text ? await geocode(collected.location_text) : null;
+    if (geo && isServiceArea(geo.province)) {
+      const ranked = branches
+        .filter((b) => b.lat && b.long)
+        .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+      assignedBranch = ranked.length > 0 ? ranked[0].branch : null;
+    }
+  }
+  if (!assignedBranch) {
+    assignedBranch = branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
+  }
+  if (!assignedBranch) {
+    return "ขอโทษด้วยนะคะ ตอนนี้แอดมินหาสาขาที่รับนัดซ่อมให้ไม่ได้ชั่วคราว เดี๋ยวทีมงานจะติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ 🙏";
+  }
+
+  const dateStr = normalizeDate(collected.preferred_date || "");
+
+  const assignedPartsStaff = await store.pickNextInPartsQueue(assignedBranch.id);
+  if (assignedPartsStaff) {
+    await store.incrementOpenPartsCount(assignedPartsStaff.id);
+  }
+
+  const booking = {
+    platform,
+    customerId: userId,
+    branchId: assignedBranch.id,
+    serviceDate: dateStr,
+    issue: collected.model_or_issue || null,
+    phone: collected.phone || null,
+    status: "new",
+    staffName: assignedPartsStaff ? assignedPartsStaff.name : "",
+    staffPhone: assignedPartsStaff ? assignedPartsStaff.phone : "",
+    customerName: finalCustomerName,
+  };
+  const bookingId = await store.appendBooking(booking);
+
+  if (session) {
+    session.lastServiceBooking = {
+      bookingId,
+      branchId: assignedBranch.id,
+      branchName: assignedBranch.name,
+      partsStaffId: assignedPartsStaff ? assignedPartsStaff.id : null,
+      partsStaffName: assignedPartsStaff ? assignedPartsStaff.name : "",
+    };
+  }
+
+  const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
+  const notifyText =
+    "🔧 นัดซ่อมใหม่ (" + platform + ")\n" +
+    customerNameNote +
+    "สาขา: " + assignedBranch.name + "\n" +
+    "วันที่นัด: " + (dateStr || "ยังไม่ระบุ") + "\n" +
+    "รุ่นรถ/อาการ: " + (collected.model_or_issue || "-") + "\n" +
+    "เบอร์ลูกค้า: " + (collected.phone || "-") + "\n" +
+    (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
+    "(ทีมอะไหล่รบกวนเช็กสต๊อกอะไหล่/อุปกรณ์ที่ต้องใช้ล่วงหน้าให้ด้วยนะคะ)\n" +
+    "Booking ID: " + bookingId;
+
+  await notifyPartsDirect(assignedBranch, assignedPartsStaff, notifyText, bookingId);
+
+  const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
+  const partsAddLineNote = assignedPartsStaff && assignedPartsStaff.lineAddUrl
+    ? `\n\nแอดไลน์ทีมอะไหล่ไว้คุยต่อได้เลยนะคะ: ${assignedPartsStaff.lineAddUrl}`
+    : "";
+
+  return `แอดมินรับข้อมูลนัดซ่อมของ${nameGreeting}เรียบร้อยแล้วนะคะ 😊 ${assignedBranch.name}${dateStr ? " วันที่ " + dateStr : ""} เดี๋ยวทางศูนย์จะติดต่อกลับไปยืนยันคิวอีกครั้งเร็วๆ นี้นะคะ${partsAddLineNote}\n\nขอบคุณที่ไว้วางใจนะคะ 🙏`;
+}
+
+async function handleServiceBranchChange({ collected, session, rawMessage, platform, userId, customerName }) {
+  const oldBooking = session.lastServiceBooking;
+  const branches = await store.getActiveBranches();
+
+  const options = branches.filter((b) => b.id !== oldBooking.branchId).map((b) => ({ branchId: b.id, branchName: b.name }));
+  let newBranch = matchBranchFromText(rawMessage || "", options);
+
+  if (!newBranch && collected.location_text) {
+    const resolved = await resolveBranchDirect(collected);
+    if (resolved && resolved.id !== oldBooking.branchId) {
+      newBranch = { branchId: resolved.id, branchName: resolved.name };
+    }
+  }
+
+  if (!newBranch) {
+    const names = options.map((o) => o.branchName).join(" หรือ ");
+    return `รบกวนแอดมินขอทราบอีกครั้งนะคะ อยากเปลี่ยนไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+  }
+
+  await store.cancelBooking(oldBooking.bookingId);
+  const cancelText =
+    "❌ ยกเลิกนัดซ่อม (ลูกค้าขอเปลี่ยนไปสาขาอื่นแทน)\n" +
+    "สาขาเดิม: " + oldBooking.branchName + "\n" +
+    "Booking ID เดิม: " + oldBooking.bookingId;
+  const oldPartsStaff = oldBooking.partsStaffId ? await store.findStaffById(oldBooking.partsStaffId) : null;
+  const oldBranch = branches.find((b) => b.id === oldBooking.branchId) || { id: oldBooking.branchId, name: oldBooking.branchName };
+  await notifyPartsDirect(oldBranch, oldPartsStaff, cancelText, oldBooking.bookingId);
+
+  const newBranchFull = branches.find((b) => b.id === newBranch.branchId);
+  session.locationSetForIntent = "service";
+  session.locationConfirmedForIntent = "service";
+  session.confirmedServiceBranchId = newBranchFull ? newBranchFull.id : null;
+  session.pendingServiceBranchIds = null;
+  return handleServiceHandoff({
+    collected,
+    session,
+    platform,
+    userId,
+    customerName,
+    replyContext: null,
+    forcedBranch: newBranchFull,
+  });
+}
+
+function normalizeDate(text) {
+  if (!text) return "";
+  const m = text.match(/\d{4}-\d{2}-\d{2}/);
+  if (!m) return text.trim();
+  const timeMatch = text.match(/ช่วงเช้า|ช่วงบ่าย|ช่วงเย็น|เช้า|บ่าย|เย็น|\d{1,2}[:.]\d{2}|\d{1,2}\s*โมง/);
+  return timeMatch ? `${m[0]} ${timeMatch[0]}` : m[0];
+}
+
+async function handleLeadReroute({ collected, session, rawMessage, platform, userId, customerName }) {
+  const oldLead = session.lastLead;
+  if (!oldLead) {
+    return "ขอโทษด้วยนะคะ 🙏 รบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่/บริการซ่อม หรือเรื่องซื้อ-เทิร์นรถคะ แอดมินจะรีบส่งให้ทีมที่ถูกต้องทันทีเลยค่ะ";
+  }
+
+  await store.cancelLead(oldLead.leadId);
+  if (oldLead.intentCategory === "trade_in") {
+    await store.decrementOpenTradeInCount(oldLead.staffId);
+  } else {
+    await store.decrementOpenLeadsCount(oldLead.staffId);
+  }
+
+  const cancelText =
+    "❌ ยกเลิก Lead (ส่งผิดแผนก ลูกค้าแจ้งว่าจริงๆ เป็นเรื่องอื่น)\n" +
+    "Lead ID เดิม: " + oldLead.leadId;
+  const oldStaff = await store.findStaffById(oldLead.staffId);
+  if (oldStaff) {
+    await notifyStaffDirect(oldStaff, cancelText, oldLead.leadId, oldLead.branchId);
+  }
+
+  collected.intent_category = null;
+  session.lastLead = null;
+  session.fallbackCount = 0;
+  session.locationBranchIntroDone = false;
+  session.serviceBranchIntroDone = false;
+
+  return "ขอโทษด้วยนะคะ 🙏 แอดมินยกเลิกคิวเดิมที่ส่งผิดแผนกให้แล้วนะคะ รบกวนแจ้งอีกครั้งได้ไหมคะว่าต้องการเรื่องอะไหล่/บริการซ่อม หรือเรื่องซื้อ-เทิร์นรถคะ แอดมินจะส่งให้ทีมที่ถูกต้องทันทีเลยค่ะ";
+}
+
+async function handleLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName }) {
+  const oldLead = session.lastLead;
+  const branches = await store.getActiveBranches();
+  const otherBranches = branches.filter((b) => b.id !== oldLead.branchId);
+
+  let newBranch = matchBranchFromText(rawMessage || "", otherBranches.map((b) => ({ branchId: b.id, branchName: b.name })));
+
+  if (!newBranch && collected.location_text) {
+    const geo = await geocode(collected.location_text);
+    if (geo && isServiceArea(geo.province)) {
+      const ranked = otherBranches
+        .filter((b) => b.lat && b.long)
+        .map((b) => ({ branch: b, distanceKm: haversineKm(geo.lat, geo.long, Number(b.lat), Number(b.long)) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+      const top2 = ranked.slice(0, 2).map((r) => r.branch);
+      if (top2.length === 1) {
+        newBranch = { branchId: top2[0].id, branchName: top2[0].name };
+      } else if (top2.length > 1) {
+        session.pendingLeadBranchChange = true;
+        session.pendingBranchChoiceIds = top2.map((b) => b.id);
+        const names = top2.map((b) => b.name).join(" หรือ ");
+        return `แอดมินเช็คแผนที่ให้แล้วค่ะ 😊 ใกล้พี่ที่สุด (ไม่นับสาขาเดิม) มี 2 สาขาเลยคือ ${names} พี่สะดวกเปลี่ยนไปสาขาไหนดีคะ`;
+      }
+    }
+  }
+
+  if (!newBranch) {
+    const names = otherBranches.map((b) => b.name).join(" หรือ ");
+    session.pendingLeadBranchChange = true;
+    session.pendingBranchChoiceIds = otherBranches.map((b) => b.id);
+    return `รบกวนแอดมินขอทราบอีกครั้งนะคะ พี่อยากเปลี่ยนไปสาขาไหนดีระหว่าง ${names} คะ 🙏`;
+  }
+
+  return finalizeLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName, newBranchId: newBranch.branchId });
+}
+
+async function finalizeLeadBranchChange({ collected, session, rawMessage, platform, userId, customerName, newBranchId }) {
+  const oldLead = session.lastLead;
+
+  await store.cancelLead(oldLead.leadId);
+  if (oldLead.intentCategory === "trade_in") {
+    await store.decrementOpenTradeInCount(oldLead.staffId);
+  } else {
+    await store.decrementOpenLeadsCount(oldLead.staffId);
+  }
+  const oldStaff = await store.findStaffById(oldLead.staffId);
+  if (oldStaff) {
+    await notifyStaffDirect(
+      oldStaff,
+      "❌ ยกเลิก Lead (ลูกค้าขอเปลี่ยนไปสาขาอื่นแทน)\nLead ID เดิม: " + oldLead.leadId,
+      oldLead.leadId,
+      oldLead.branchId
+    );
+  }
+
+  session.confirmedGeneralBranchId = newBranchId;
+  session.pendingBranchChoiceIds = null;
+  session.pendingLeadBranchChange = false;
+  session.lastLead = null;
+  session.fallbackCount = 0;
+
+  return handleSalesHandoff({
+    collected,
+    session,
+    rawMessage,
+    intent: oldLead.intentCategory || collected.intent_category || "buying_new",
+    platform,
+    userId,
+    customerName,
+    replyContext: null,
+    highIntent: false,
+  });
+}
+
+function buildPendingJobsSection(pendingRefs) {
+  if (!pendingRefs.length) return "";
+  const lines = pendingRefs
+    .map((p, i) => {
+      const typeLabel = p.type === "booking" ? "นัดซ่อม" : "Lead";
+      return `#${i + 1}) [${typeLabel}] ลูกค้า: ${p.customerName || "-"} | เรื่อง: ${p.detail || "-"} | เลขที่: ${p.refId}`;
+    })
+    .join("\n");
+  return (
+    "⚠️ มีงานค้างที่ยังไม่มีใครกดรับทราบอยู่ก่อนหน้านี้ด้วยนะคะ (" + pendingRefs.length + " งาน):\n" +
+    lines +
+    "\n\n———————————\n\n"
+  );
+}
+
+async function notifyStaffDirect(staff, text, leadId, branchId) {
+  const effectiveBranchId = branchId || store.getStaffBranchIds(staff)[0] || staff.branchId;
+  const pending = await store.getPendingRefsForStaff(staff.name, effectiveBranchId, leadId);
+  const newJobLabel = pending.length ? `#${pending.length + 1}) ` : "";
+  const fullText = buildPendingJobsSection(pending) + newJobLabel + text;
+  const allIds = [...pending.map((p) => p.refId), leadId];
+
+  if (staff.lineUserId) {
+    try {
+      await line.pushMessageWithAck(staff.lineUserId, fullText, allIds);
+      return;
+    } catch (err) {
+      console.error("[router] pushMessageWithAck error:", err.message);
+    }
+  } else {
+    console.warn(`[router] พนักงาน ${staff.name} (${staff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
+  }
+  const supervisor = await store.getSupervisorForBranch(effectiveBranchId);
+  if (supervisor && supervisor.lineUserId) {
+    try {
+      await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + fullText, allIds);
+      return;
+    } catch (err) {
+      console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
+    }
+  } else {
+    console.warn(`[router] สาขา ${effectiveBranchId} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, text);
+  }
+}
+
+async function notifyPartsDirect(branch, partsStaff, text, bookingId) {
+  const pending = partsStaff ? await store.getPendingRefsForStaff(partsStaff.name, branch.id, bookingId) : [];
+  const newJobLabel = pending.length ? `#${pending.length + 1}) ` : "";
+  const fullText = buildPendingJobsSection(pending) + newJobLabel + text;
+  const allIds = [...pending.map((p) => p.refId), bookingId];
+
+  if (partsStaff && partsStaff.lineUserId) {
+    try {
+      await line.pushMessageWithAck(partsStaff.lineUserId, fullText, allIds);
+      return;
+    } catch (err) {
+      console.error("[router] notifyPartsDirect pushMessageWithAck error:", err.message);
+    }
+  } else if (partsStaff) {
+    console.warn(`[router] ทีมอะไหล่ ${partsStaff.name} (${partsStaff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
+  } else {
+    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ไม่มีทีมอะไหล่ (role=parts) ในระบบเลย`);
+  }
+  const supervisor = await store.getSupervisorForBranch(branch.id);
+  if (supervisor && supervisor.lineUserId) {
+    try {
+      await line.pushMessageWithAck(supervisor.lineUserId, "⚠️ (ทีมอะไหล่ยังไม่ได้ลงทะเบียนไลน์) " + fullText, allIds);
+      return;
+    } catch (err) {
+      console.error("[router] notifyPartsDirect supervisor fallback error:", err.message);
+    }
+  } else {
+    console.warn(`[router] สาขา ${branch.name} (${branch.id}) ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, text);
+  }
+}
+
+module.exports = { handleTurn };
