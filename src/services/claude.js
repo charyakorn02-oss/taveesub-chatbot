@@ -190,6 +190,28 @@ function tryParseJson(raw) {
         return null;
       }
     }
+    // กันเหนียวชั้นสุดท้าย: บั๊กที่เจอจริง - บางครั้ง Claude เผลอตอบเป็นข้อความธรรมดาล้วนๆ ไม่มี { } เลยสักตัว
+    // (ทั้งที่ system prompt สั่งให้ตอบ JSON เสมอ เช่น ตอนพิมพ์รายชื่อสาขาหลายบรรทัดแล้วลืมห่อ JSON) เดิมเคสนี้ parse
+    // ไม่ผ่านทั้ง 3 รอบ ลูกค้าเห็นข้อความ fallback ซ้ำๆ ทั้งที่จริงๆ Claude ตอบคำถามมาถูกต้องแล้ว แค่ลืมห่อ JSON เฉยๆ
+    // ถ้าข้อความดิบดูเป็นคำตอบภาษาไทยจริงๆ (ไม่ใช่ error/ว่างเปล่า) ให้ห่อเป็น JSON ให้เองแทนที่จะทิ้งคำตอบไปเฉยๆ
+    if (stripped && stripped.length > 0 && !stripped.includes("{")) {
+      return {
+        reply_text_to_customer: stripped,
+        intent_category: null,
+        customer_name: null,
+        model_or_issue: null,
+        delivery_preference: null,
+        location_text: null,
+        requested_staff_name: null,
+        preferred_date: null,
+        phone: null,
+        high_intent_keyword: false,
+        in_scope: true,
+        has_confident_answer: true,
+        data_complete: false,
+        fallback: false,
+      };
+    }
     return null;
   }
 }
