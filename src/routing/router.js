@@ -601,7 +601,11 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   }
 
   const badge = routingMethod === "requested" ? `🌟 ลูกค้าประจำของ ${assignedStaff.name}\n` : "";
-  const deliveryNote = collected.delivery_preference ? `วิธีรับรถ: ${collected.delivery_preference}\n` : "";
+  // แปล delivery_preference เป็นภาษาไทยให้พนักงานอ่านง่าย (เดิมโชว์เป็นค่าดิบภาษาอังกฤษ เช่น "pickup_at_branch")
+  const deliveryPrefThaiMap = { pickup_at_branch: "รับที่สาขา", home_delivery: "จัดส่งถึงบ้าน" };
+  const deliveryNote = collected.delivery_preference
+    ? `วิธีรับรถ: ${deliveryPrefThaiMap[collected.delivery_preference] || collected.delivery_preference}\n`
+    : "";
   const customerNameNote = finalCustomerName ? `ชื่อลูกค้า (${platform}): ${finalCustomerName}\n` : "";
   const tradeInNote =
     intent === "trade_in" ? "⚠️ เทิร์นรถ: แจ้งลูกค้าได้แค่ราคาประเมินเบื้องต้น ห้ามฟันธงราคาสุดท้ายทางแชท ลูกค้าอาจส่งภาพรถคันเดิมมาให้ดูประกอบการประเมิน\n" : "";
@@ -628,7 +632,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       : "";
   const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
   const addLineNote = assignedStaff.lineAddUrl
-    ? `\n\nแอดไลน์ ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
+    ? `\n\nแอดไลน์เซล ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
     : "";
 
   const tradeInPriceNote =
@@ -636,7 +640,13 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} ${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
       : "";
 
-  return `เรียบร้อยค่ะ${nameGreeting ? " " + nameGreeting : ""}! 🙏 ขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 😊 แอดมินส่งข้อมูลของพี่ให้ทีมงาน${assignedBranch.name}เรียบร้อยแล้วนะคะ ${deliveryLine}เดี๋ยวจะมีเซลชื่อ ${assignedStaff.name} จากสาขานี้ติดต่อกลับไปหาพี่เร็วๆ นี้เลยนะคะ (เบอร์เซล: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}) รบกวนรอสักครู่นะคะ${tradeInPriceNote}${addLineNote}`;
+  return (
+    `เรียบร้อยค่ะ${nameGreeting ? " " + nameGreeting : ""}! 🙏 ขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 😊\n\n` +
+    `แอดมินส่งข้อมูลของพี่ให้ทีมงาน${assignedBranch.name}เรียบร้อยแล้วนะคะ ${deliveryLine}\n` +
+    `เดี๋ยวจะมีเซลชื่อ ${assignedStaff.name} จากสาขานี้ติดต่อกลับไปหาพี่เร็วๆ นี้เลยนะคะ\n` +
+    `เบอร์เซล: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}\n\n` +
+    `รบกวนรอสักครู่นะคะ${tradeInPriceNote}${addLineNote}`
+  );
 }
 
 async function resolveBranchDirect(collected) {
