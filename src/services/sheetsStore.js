@@ -72,9 +72,23 @@ async function getActiveStaff() {
   return rows.map(rowToObject).filter((r) => String(r.active).toUpperCase() === 'TRUE');
 }
 
+// รองรับพนักงาน 1 คนดูแลได้หลายสาขา: เก็บในคอลัมน์ branchId เป็นค่าคั่นด้วยจุลภาค เช่น "NM90,LL4"
+// (พนักงานส่วนใหญ่มีสาขาเดียวก็ยังใช้ได้ปกติ เพราะ split(',') ของ string เดี่ยวๆ ก็ได้ array ยาว 1 ตัวอยู่แล้ว)
+function getStaffBranchIds(staff) {
+  if (!staff || !staff.branchId) return [];
+  return String(staff.branchId)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function staffServesBranch(staff, branchId) {
+  return getStaffBranchIds(staff).includes(branchId);
+}
+
 async function getStaffForBranch(branchId, role) {
   const staff = await getActiveStaff();
-  return staff.filter((s) => s.branchId === branchId && (!role || String(s.role || '').trim() === role));
+  return staff.filter((s) => staffServesBranch(s, branchId) && (!role || String(s.role || '').trim() === role));
 }
 
 async function getSupervisorForBranch(branchId) {
@@ -473,6 +487,10 @@ async function markBookingEscalated(bookingId) {
 async function getPendingRefsForStaff(staffName, branchId, excludeId) {
   if (!staffName || !branchId) return [];
 
+  // branchId ที่รับเข้ามาอาจเป็นค่าเดียว หรือรายการคั่นด้วยจุลภาค (กรณีพนักงาน 1 คนดูแลหลายสาขา เช่น "NM90,LL4")
+  // ใช้ includes() แทนเทียบตรงๆ เพื่อรองรับทั้งสองแบบ ส่วน Lead/Booking แต่ละแถวมี branchId เป็นค่าเดียวเสมอ (สาขาที่ผูกไว้ตอนสร้าง)
+  const branchIdList = String(branchId).split(',').map((s) => s.trim()).filter(Boolean);
+
   const leadRows = await getRows('Leads');
   const leadPending = leadRows
     .map(rowToObject)
@@ -480,7 +498,7 @@ async function getPendingRefsForStaff(staffName, branchId, excludeId) {
       (r) =>
         r.leadId && // กันแถวที่ไม่มีเลขที่ leadId (เช่น แถวว่าง/ข้อมูลตกหล่นในชีต) หลุดเข้ามาแล้วทำให้ acknowledgeAndReply พังตอน .startsWith()
         r.staffName === staffName &&
-        r.branchId === branchId &&
+        branchIdList.includes(r.branchId) &&
         !r.acknowledgedAt &&
         r.status !== 'cancelled' &&
         r.leadId !== excludeId
@@ -500,7 +518,7 @@ async function getPendingRefsForStaff(staffName, branchId, excludeId) {
       (r) =>
         r.bookingId && // กันแถวที่ไม่มีเลขที่ bookingId เหมือนกับฝั่ง lead ด้านบน
         r.staffName === staffName &&
-        r.branchId === branchId &&
+        branchIdList.includes(r.branchId) &&
         !r.acknowledgedAt &&
         r.status !== 'cancelled' &&
         r.bookingId !== excludeId
@@ -667,6 +685,8 @@ module.exports = {
   setStaffLineUserId,
   isLineUserIdTaken,
   getStaffForBranch,
+  getStaffBranchIds,
+  staffServesBranch,
   pickNextInQueue,
   incrementOpenLeadsCount,
   pickNextInTradeInQueue,
