@@ -82,8 +82,11 @@ async function notifyEscalation({ refId, branchId, staffName, customerName, mode
 
   // เตือนซ้ำไปหาคนเดิมที่รับผิดชอบก่อน (ถ้ามีไลน์) เผื่อแค่พลาดไม่เห็นข้อความตอนแรก
   // พร้อมรวมงานอื่นที่ค้างไม่รับทราบของคนเดิมมาในข้อความเดียวกันด้วย (ใช้ปุ่มแยกทีละงาน กันงานเก่าหลุดไปเงียบๆ)
-  const staff = staffName ? (await store.getActiveStaff()).find((s) => s.name === staffName && s.branchId === branchId) : null;
-  const pending = staff ? await store.getPendingRefsForStaff(staff.name, staff.branchId, refId) : [];
+  // ใช้ staffServesBranch แทนเทียบ branchId ตรงๆ เพราะพนักงาน 1 คนอาจดูแลได้หลายสาขา (branchId เก็บเป็น "NM90,LL4")
+  const staff = staffName
+    ? (await store.getActiveStaff()).find((s) => s.name === staffName && store.staffServesBranch(s, branchId))
+    : null;
+  const pending = staff ? await store.getPendingRefsForStaff(staff.name, branchId, refId) : [];
   const fullText = buildPendingJobsSection(pending) + (pending.length ? `#${pending.length + 1}) ` : "") + text;
   const allIds = [...pending.map((p) => p.refId), refId];
 
