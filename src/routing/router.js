@@ -538,8 +538,9 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
 
     if (session.pendingStaffCandidateIds && session.pendingStaffCandidateIds.length > 0) {
       const candidates = await Promise.all(session.pendingStaffCandidateIds.map((id) => store.findStaffById(id)));
+      // ใช้ staffServesBranch แทนเทียบ branchId ตรงๆ เพราะพนักงาน 1 คนอาจดูแลได้หลายสาขา (branchId เก็บเป็น "NM90,LL4")
       const found = candidates.find(
-        (s) => s && s.branchId === matchedOption.branchId && String(s.active).toUpperCase() === "TRUE"
+        (s) => s && store.staffServesBranch(s, matchedOption.branchId) && String(s.active).toUpperCase() === "TRUE"
       );
       if (found) {
         assignedStaff = found;
@@ -554,29 +555,35 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   else if (collected.requested_staff_name) {
     const matches = await store.findStaffMatches(collected.requested_staff_name, "sales");
 
-    if (matches.length === 1) {
+    if (matches.length === 1 && store.getStaffBranchIds(matches[0]).length <= 1) {
+      // เจอคนเดียวและดูแลแค่สาขาเดียว -> ไม่ต้องถามอะไรเพิ่ม
       assignedStaff = matches[0];
-      assignedBranch = await store.getBranchById(assignedStaff.branchId);
+      assignedBranch = await store.getBranchById(store.getStaffBranchIds(matches[0])[0]);
       routingMethod = "requested";
-    } else if (matches.length > 1) {
-      // ชื่อซ้ำ/คล้ายกันหลายคน -> ถามลูกค้าว่าสะดวกสาขาไหน แล้วค่อยเลือกคนที่ตรงสาขา
+    } else if (matches.length >= 1) {
+      // เคสที่ต้องถามสาขา 2 แบบ: (1) ชื่อซ้ำ/คล้ายกันหลายคนอยู่คนละสาขา หรือ (2) เจอคนเดียวแต่คนนั้นดูแลหลายสาขา
+      // รวมสาขาที่เป็นไปได้ทั้งหมดจากทุก match เข้าด้วยกัน (กันชื่อซ้ำหลายคน + บางคนดูแลหลายสาขาพร้อมกัน)
       const branches = await store.getActiveBranches();
-      const branchIds = [...new Set(matches.map((s) => s.branchId))];
+      const branchIds = [...new Set(matches.flatMap((s) => store.getStaffBranchIds(s)))];
       const options = branchIds
         .map((id) => branches.find((b) => b.id === id))
         .filter(Boolean)
         .map((b) => ({ branchId: b.id, branchName: b.name }));
 
       if (options.length <= 1) {
-        // ชื่อซ้ำแต่จริงๆ อยู่สาขาเดียวกัน -> เลือกคนแรกไปเลย ไม่ต้องถามซ้ำให้ลูกค้ารำคาญ
+        // จริงๆ แล้วมีตัวเลือกสาขาเดียว (เช่น ชื่อซ้ำแต่อยู่สาขาเดียวกัน) -> เลือกคนแรกไปเลย ไม่ต้องถามซ้ำให้ลูกค้ารำคาญ
         assignedStaff = matches[0];
-        assignedBranch = await store.getBranchById(assignedStaff.branchId);
+        assignedBranch = await store.getBranchById(store.getStaffBranchIds(matches[0])[0]);
         routingMethod = "requested";
       } else {
         session.pendingStaffBranchOptions = options;
         session.pendingStaffCandidateIds = matches.map((s) => s.id);
         const names = options.map((o) => o.branchName).join(" หรือ ");
-        return `พบชื่อ "${collected.requested_staff_name}" มากกว่า 1 คนเลยค่ะ 😊 สะดวกไปสาขาไหนดีระหว่าง ${names} คะ`;
+        const intro =
+          matches.length > 1
+            ? `พบชื่อ "${collected.requested_staff_name}" มากกว่า 1 คนเลยค่ะ 😊`
+            : `คุณ ${matches[0].name} ดูแลหลายสาขาเลยค่ะ 😊`;
+        return `${intro} สะดวกไปสาขาไหนดีระหว่าง ${names} คะ`;
       }
     } else {
       // ไม่พบชื่อนี้ในระบบเลย -> แจ้งลูกค้าตรงๆ แล้วถามว่าสะดวกสาขาไหน แทนที่จะเงียบแล้วสุ่มให้เอง
@@ -670,7 +677,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
     "Lead ID: " + leadId;
 
-  await notifyStaffDirect(assignedStaff, notifyText, leadId);
+  await notifyStaffDirect(assignedStaff, notifyText, leadId, assignedBranch.id);
 
   const deliveryLine =
     collected.delivery_preference === "home_delivery"
@@ -938,7 +945,7 @@ async function handleLeadReroute({ collected, session, rawMessage, platform, use
     "Lead ID เดิม: " + oldLead.leadId;
   const oldStaff = await store.findStaffById(oldLead.staffId);
   if (oldStaff) {
-    await notifyStaffDirect(oldStaff, cancelText, oldLead.leadId);
+    await notifyStaffDirect(oldStaff, cancelText, oldLead.leadId, oldLead.branchId);
   }
 
   // เคลียร์หมวดเดิมทั้งหมด ให้เริ่มจัดหมวดใหม่จากข้อความถัดไปของลูกค้าล้วนๆ กันหลุดมาเป็นหมวดผิดซ้ำอีก
@@ -1005,7 +1012,8 @@ async function finalizeLeadBranchChange({ collected, session, rawMessage, platfo
     await notifyStaffDirect(
       oldStaff,
       "❌ ยกเลิก Lead (ลูกค้าขอเปลี่ยนไปสาขาอื่นแทน)\nLead ID เดิม: " + oldLead.leadId,
-      oldLead.leadId
+      oldLead.leadId,
+      oldLead.branchId
     );
   }
 
@@ -1057,8 +1065,11 @@ function buildPendingJobsSection(pendingRefs) {
 // ส่งแจ้งเตือน Lead ตรงถึงไลน์ส่วนตัวเซล พร้อมปุ่ม "รับทราบแล้ว" (ผูกกับ leadId) ถ้าเซลยังไม่ได้ลงทะเบียนไลน์
 // ให้ fallback ไปแจ้งหัวหน้าสาขา (role=supervisor ในแท็บ Staff) แทนทันที (พร้อมปุ่มรับทราบเช่นกัน ผูกกับ leadId เดียวกัน)
 // ก่อนส่งจะเช็คก่อนว่าเซลคนนี้มีงานอื่นค้างไม่รับทราบอยู่ไหม ถ้ามีจะรวมมาแสดงในข้อความเดียวกันพร้อมปุ่มรับทราบแยกทุกงาน
-async function notifyStaffDirect(staff, text, leadId) {
-  const pending = await store.getPendingRefsForStaff(staff.name, staff.branchId, leadId);
+// branchId: สาขาที่งาน/lead นี้ผูกอยู่จริงๆ (ต้องระบุชัดเจน ห้ามใช้ staff.branchId ตรงๆ เพราะพนักงาน 1 คนอาจดูแลได้หลายสาขา
+// ("NM90,LL4") ถ้าไม่ระบุมา จะ fallback ไปใช้สาขาแรกของพนักงานคนนั้น (เผื่อเรียกจากจุดเก่าที่ยังไม่ได้ส่งมา)
+async function notifyStaffDirect(staff, text, leadId, branchId) {
+  const effectiveBranchId = branchId || store.getStaffBranchIds(staff)[0] || staff.branchId;
+  const pending = await store.getPendingRefsForStaff(staff.name, effectiveBranchId, leadId);
   const newJobLabel = pending.length ? `#${pending.length + 1}) ` : "";
   const fullText = buildPendingJobsSection(pending) + newJobLabel + text;
   const allIds = [...pending.map((p) => p.refId), leadId];
@@ -1073,7 +1084,7 @@ async function notifyStaffDirect(staff, text, leadId) {
   } else {
     console.warn(`[router] พนักงาน ${staff.name} (${staff.id}) ยังไม่ได้ลงทะเบียน lineUserId`);
   }
-  const supervisor = await store.getSupervisorForBranch(staff.branchId);
+  const supervisor = await store.getSupervisorForBranch(effectiveBranchId);
   if (supervisor && supervisor.lineUserId) {
     try {
       await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + fullText, allIds);
@@ -1082,7 +1093,7 @@ async function notifyStaffDirect(staff, text, leadId) {
       console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
     }
   } else {
-    console.warn(`[router] สาขา ${staff.branchId} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, text);
+    console.warn(`[router] สาขา ${effectiveBranchId} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, text);
   }
 }
 
