@@ -141,7 +141,22 @@ async function introduceNearestServiceBranch(locationText, session) {
   return null;
 }
 
+// บั๊กที่เจอจริง: Claude มักพูดชื่อคนที่จะติดต่อกลับเองใน reply_text_to_customer (เช่น ลูกค้าพิมพ์ถึงชื่อคนที่ไม่ใช่พนักงานเรา
+// เช่น "Cathy" ซึ่งเป็นเจ้าหน้าที่ไฟแนนซ์ภายนอกของลูกค้าเอง) แล้ว Claude เข้าใจผิดหยิบชื่อนั้นมาพูดว่า "เดี๋ยว Cathy จะติดต่อกลับ"
+// ทั้งที่ไม่ใช่พนักงานเราเลย ต่อให้เพิ่มกฎในพรอมต์ห้ามแล้วก็ยังหลุดได้บ้าง (LLM ไม่ 100%) เลยต้องมีตัวกรองฝั่งโค้ดเป็นตาข่ายนิรภัยอีกชั้น
+// ตัดประโยคที่มีทั้งตัวอักษรภาษาอังกฤษ (ชื่อคนแบบนี้มักสะกดด้วยอังกฤษ) ปนอยู่กับคำว่า "ติดต่อ" ทิ้งไปเสมอ ไม่ว่าจะเป็นชื่อใครก็ตาม
+// เพราะชื่อพนักงานจริงที่มอบหมายให้จะถูกใส่โดยระบบฝั่งเซิร์ฟเวอร์เองอยู่แล้วตอน handoff สำเร็จจริง ไม่จำเป็นต้องพึ่ง Claude พูดเอง
+function stripFabricatedContactPromise(text) {
+  if (!text) return text;
+  const sentences = text.split(/(?<=[.\n])/);
+  const filtered = sentences.filter((s) => !(/[A-Za-z]{2,}/.test(s) && /ติดต่อ/.test(s)));
+  return filtered.join("").trim();
+}
+
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
+  if (analysis && typeof analysis.reply_text_to_customer === "string") {
+    analysis.reply_text_to_customer = stripFabricatedContactPromise(analysis.reply_text_to_customer);
+  }
   const collected = session.collected;
   const oldLocationTextBeforeMerge = collected.location_text || null;
   const fieldsToMerge = [
