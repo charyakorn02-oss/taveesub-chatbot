@@ -13,6 +13,9 @@ const FALLBACK_LIMIT = 2;
 const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา|สาขาไหนบ้าง|สาขาไหนใกล้|ใกล้ที่สุด|ใกล้สุด|สาขาอื่น/;
 const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผิดคน|ผิดแผนก|ไม่ใช่ฝ่ายขาย|ไม่ใช่เซล|ไม่ใช่แผนกขาย|ส่งผิด/;
 const SAME_AS_BEFORE_KEYWORDS = /เหมือนเดิม|ที่เดิม|เบอร์เดิม|สาขาเดิม|อันเดิม|ข้อมูลเดิม|^ใช่ค่ะ$|^ใช่ครับ$|^ใช่$|^ยืนยัน|^ตกลง|^โอเค|^ok/i;
+// บั๊กที่เจอจริง: ลูกค้าบอกชัดเจนว่ายังไม่ตัดสินใจ/แค่อยากปรึกษา แต่ Claude ยังจัด intent_category เป็น buying_new อยู่ (อาจเพราะคุยเรื่องซื้อรถมาก่อนหน้านี้)
+// ทำให้ระบบไปถามรุ่นรถ/สาขา/วิธีรับรถต่อ ทั้งที่ลูกค้าแค่อยากคุยปรึกษาเคสของตัวเองเท่านั้น ไม่ต้องเก็บข้อมูลซื้อรถให้ครบก่อน handoff
+const UNDECIDED_CONSULT_KEYWORDS = /ขอปรึกษาก่อน|ไม่รู้จะซื้อ|ยังไม่แน่ใจ|ไม่แน่ใจว่าจะซื้อ|ยังไม่ตัดสินใจ|แค่อยากปรึกษา|ปรึกษาเคส/;
 
 function containsHighIntentKeyword(text) {
   if (!text) return false;
@@ -165,6 +168,9 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     if (!oldIntent || newIntent === oldIntent || intentKeywordMatches(newIntent, rawMessage)) {
       collected.intent_category = newIntent;
     }
+  }
+  if (UNDECIDED_CONSULT_KEYWORDS.test(rawMessage || "")) {
+    collected.intent_category = "general";
   }
 
   if (analysis.location_text) {
