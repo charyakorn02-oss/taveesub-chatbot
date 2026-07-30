@@ -46,8 +46,11 @@ function normalizeBranchNameForMatch(name) {
 function extractNumbers(str) {
   return (str || "").match(/\d+/g) || [];
 }
-function matchBranchFromText(text, options) {
-  if (!text) return null;
+function matchBranchFromText(rawText, options) {
+  if (!rawText) return null;
+  // กันบั๊กที่เจอจริง: ลูกค้าพิมพ์ย่อ "สนง." แทน "สำนักงาน" (เช่น "สนง.ใหญ่" แทน "สำนักงานใหญ่") ทำให้จับคู่ชื่อสาขาไม่เจอ
+  // เดิมไม่มีการขยายคำย่อนี้เลย ทำให้ระบบต้องไปเดาจาก Google Maps แทน (ซึ่งบางทีเดาผิดไปสาขาอื่นที่ใกล้เคียงกันแทน)
+  const text = rawText.replace(/สนง\./g, "สำนักงาน");
   const trimmed = text.trim();
   const direct = options.find((o) => {
       const full = o.branchName || "";
@@ -284,11 +287,24 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     !collected.requested_staff_name &&
     !session.serviceBranchIntroDone
   ) {
-    const introReply = await introduceNearestServiceBranch(collected.location_text, session);
-    if (introReply) {
+    // บั๊กที่เจอจริง: ลูกค้าระบุชื่อสาขาตรงๆ อยู่แล้ว (เช่น "สนง.ใหญ่" "สำนักงานใหญ่" "คลอง4") แต่ระบบไม่เช็คชื่อตรงๆ ก่อน
+    // ไปเข้า Google Maps geocode ทันที ซึ่งบางครั้งเดาที่อยู่ผิดเพี้ยนไปสาขาอื่นที่ใกล้เคียงกันแทน (ส่งซ่อมผิดสาขาไปจากที่ลูกค้าขอ)
+    // -> เช็คชื่อสาขาตรงๆ จากข้อความลูกค้าก่อนเสมอ เหมือนที่ทำกับ buying_new ด้านบน ถ้าเจอให้ใช้เลย ไม่ต้อง geocode เดาอีก
+    const branchesForServiceDirectMatch = await store.getActiveBranches();
+    const serviceDirectMatch = matchBranchFromText(
+      collected.location_text,
+      branchesForServiceDirectMatch.map((b) => ({ branchId: b.id, branchName: b.name }))
+    );
+    if (serviceDirectMatch) {
+      session.confirmedServiceBranchId = serviceDirectMatch.branchId;
       session.serviceBranchIntroDone = true;
-      session.fallbackCount = 0;
-      return introReply;
+    } else {
+      const introReply = await introduceNearestServiceBranch(collected.location_text, session);
+      if (introReply) {
+        session.serviceBranchIntroDone = true;
+        session.fallbackCount = 0;
+        return introReply;
+      }
     }
   }
 
