@@ -146,16 +146,39 @@ async function introduceNearestServiceBranch(locationText, session) {
 // ทั้งที่ไม่ใช่พนักงานเราเลย ต่อให้เพิ่มกฎในพรอมต์ห้ามแล้วก็ยังหลุดได้บ้าง (LLM ไม่ 100%) เลยต้องมีตัวกรองฝั่งโค้ดเป็นตาข่ายนิรภัยอีกชั้น
 // ตัดประโยคที่มีทั้งตัวอักษรภาษาอังกฤษ (ชื่อคนแบบนี้มักสะกดด้วยอังกฤษ) ปนอยู่กับคำว่า "ติดต่อ" ทิ้งไปเสมอ ไม่ว่าจะเป็นชื่อใครก็ตาม
 // เพราะชื่อพนักงานจริงที่มอบหมายให้จะถูกใส่โดยระบบฝั่งเซิร์ฟเวอร์เองอยู่แล้วตอน handoff สำเร็จจริง ไม่จำเป็นต้องพึ่ง Claude พูดเอง
-function stripFabricatedContactPromise(text) {
+// อัปเกรดจาก stripFabricatedContactPromise เดิม (ที่กรองแค่ชื่อสะกดอังกฤษ) ตามที่ผู้ใช้ระบบขอ:
+// ทุกครั้งที่ประโยคจะบอกลูกค้าว่า "มีคนชื่อ X จะติดต่อกลับ" ต้องเช็คกับชีต Staff จริงๆ เสมอว่ามีพนักงานชื่อนี้อยู่จริงไหม (เจอ staffId จริง)
+// ไม่ใช่แค่เดาจากตัวสะกดอังกฤษเหมือนเดิม (เพราะชื่อหลอนอาจเป็นชื่อไทยก็ได้ เช่น ชื่อคนอื่นที่ลูกค้าเอ่ยถึงเอง) ถ้าเช็คแล้วไม่พบตัวตนจริงในระบบ ให้ตัดประโยคนั้นทิ้งเสมอ
+// กันหลอน (hallucination) แบบเดียวกับเคส "เซล Cathy" ที่เจอจริง แต่ครอบคลุมกว้างขึ้นกว่าเดิม ไม่ใช่แค่ชื่อภาษาอังกฤษเท่านั้น
+async function verifyContactPromiseAgainstStaff(text) {
   if (!text) return text;
   const sentences = text.split(/(?<=[.\n])/);
-  const filtered = sentences.filter((s) => !(/[A-Za-z]{2,}/.test(s) && /ติดต่อ/.test(s)));
-  return filtered.join("").trim();
+  const kept = [];
+  for (const s of sentences) {
+    if (/ติดต่อ/.test(s)) {
+      const nameMatch = s.match(/(?:คุณ|เซล|พนักงาน|ช่าง|เจ้าหน้าที่)\s*([ก-๙A-Za-z]{2,})/);
+      if (nameMatch) {
+        const candidateName = nameMatch[1];
+        let realActive = false;
+        try {
+          const staffMatches = await store.findStaffMatches(candidateName);
+          realActive = staffMatches.some((m) => m && String(m.active).toUpperCase() === "TRUE");
+        } catch (err) {
+          realActive = false;
+        }
+        if (!realActive) continue; // ไม่พบพนักงานจริงชื่อนี้ในชีต Staff เลย -> ตัดประโยคนี้ทิ้ง กันหลอนชื่อปลอม
+      } else if (/[A-Za-z]{2,}/.test(s)) {
+        continue;
+      }
+    }
+    kept.push(s);
+  }
+  return kept.join("").trim();
 }
 
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   if (analysis && typeof analysis.reply_text_to_customer === "string") {
-    analysis.reply_text_to_customer = stripFabricatedContactPromise(analysis.reply_text_to_customer);
+    analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
   }
   const collected = session.collected;
   const oldLocationTextBeforeMerge = collected.location_text || null;
