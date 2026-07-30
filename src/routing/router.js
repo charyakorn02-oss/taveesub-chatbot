@@ -147,7 +147,15 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   ];
   fieldsToMerge.forEach((f) => {
     if (analysis[f] !== undefined && analysis[f] !== null && analysis[f] !== "") {
-      collected[f] = analysis[f];
+      let v = analysis[f];
+      // บั๊กที่เจอจริง: บางครั้ง Claude ตัดเลข 0 หน้าเบอร์โทรทิ้ง (เช่น "0809369836" กลายเป็น "809369836")
+      // เช็คว่าถ้าเป็นเลขล้วน 9 หลัก ขึ้นต้นด้วย 6/8/9 (รูปแบบเบอร์มือถือไทยที่ขาด 0 นำหน้า) ให้เติม 0 กลับให้อัตโนมัติ
+      if (f === "phone" && typeof v === "string") {
+        const digitsOnly = v.replace(/\D/g, "");
+        if (/^[689]\d{8}$/.test(digitsOnly)) v = "0" + digitsOnly;
+        else v = digitsOnly || v;
+      }
+      collected[f] = v;
     }
   });
 
@@ -251,7 +259,8 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     if (directMatch) {
       session.confirmedGeneralBranchId = directMatch.branchId;
       session.locationBranchIntroDone = true;
-      collected.delivery_preference = collected.delivery_preference || "pickup_at_branch";
+      // บั๊กที่เจอจริง: เดิมตรงนี้ auto-default เป็น "pickup_at_branch" ทันทีเงียบๆ โดยไม่เคยถามลูกค้าเลยว่าจะมารับเองหรือให้จัดส่ง
+      // ทำให้ระบบข้ามคำถามสำคัญนี้ไปตลอด (ดูเงื่อนไข needsSalesEssentials ด้านล่างที่บังคับให้ถามก่อน handoff เสมอ)
     } else {
       const introReply = await introduceNearestBranches(collected.location_text, session);
       if (introReply) {
@@ -336,7 +345,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     if (matched) {
       session.pendingBranchChoiceIds = null;
       session.confirmedGeneralBranchId = matched.branchId;
-      collected.delivery_preference = collected.delivery_preference || "pickup_at_branch";
+      // บั๊กที่เจอจริง: เดิมตรงนี้ก็ auto-default delivery_preference เงียบๆ เช่นกัน ไม่เคยถามลูกค้า (ดู needsSalesEssentials ด้านล่าง)
       session.fallbackCount = 0;
     }
   }
@@ -376,7 +385,8 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     effectiveIntent === "service" && (!collected.phone || !collected.preferred_date || needsBranchInfo);
 
   const needsSalesEssentials =
-    (effectiveIntent === "buying_new" || effectiveIntent === "trade_in") && (needsBranchInfo || !collected.phone);
+    (effectiveIntent === "buying_new" || effectiveIntent === "trade_in") &&
+    (needsBranchInfo || !collected.phone || (effectiveIntent === "buying_new" && !collected.delivery_preference));
 
   const hasPhone = Boolean(collected.phone);
   const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
