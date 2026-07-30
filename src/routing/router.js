@@ -390,10 +390,17 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   const hasPhone = Boolean(collected.phone);
   const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
+  // บั๊กที่เจอจริง: เคย handoff ส่ง lead ไปแล้วรอบนึง (ข้อมูลลูกค้า/สาขา/เบอร์ครบหมดแล้วจากตอนนั้น) พอลูกค้าทักมาใหม่ถามคำถามธรรมดา
+  // (เช่น "เช็คระยะกี่กิโล") ระบบเห็นว่า data ครบอยู่แล้ว (claudeSaysComplete) เลยส่ง lead ซ้ำอัตโนมัติทันทีโดยไม่ได้ตอบคำถามลูกค้าเลย
+  // -> ถ้าเคย handoff ไปแล้ว จะ handoff ซ้ำได้อีกครั้งเฉพาะตอนที่ "รอบนี้" มีสัญญาณ high-intent ใหม่จริงๆ เท่านั้น (เช่น "จอง", "โอนเงิน")
+  // ไม่ใช่แค่เพราะข้อมูลเก่ายังครบอยู่เฉยๆ กรณีอื่นให้ตอบคำถามลูกค้าไปตามปกติก่อน ไม่ต้องส่ง lead ซ้ำ
+  const alreadyHandedOff = Boolean(session.handedOff);
   const shouldHandoff =
     !needsServiceEssentials &&
     !needsSalesEssentials &&
-    (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT);
+    (alreadyHandedOff
+      ? highIntent
+      : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
@@ -422,6 +429,8 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
   if (intent !== collected.intent_category) {
     collected.intent_category = intent;
   }
+  // จำไว้ว่าเคย handoff (ส่ง lead) ไปแล้วในเซสชันนี้ กันบั๊กส่ง lead ซ้ำจากข้อมูลเก่า (ดูเงื่อนไข alreadyHandedOff ด้านบน)
+  session.handedOff = true;
 
   if (intent === "buying_new" || intent === "trade_in") {
     return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent, naturalReply });
