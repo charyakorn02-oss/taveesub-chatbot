@@ -205,6 +205,20 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   });
 
+  // บั๊กที่เจอจริง: บทสนทนาที่ไม่เข้าหมวดชัดเจน (เช่น general/ปรึกษาเรื่องไฟแนนซ์) บอทถามเบอร์ไปแล้ว ลูกค้าตอบเบอร์มาตรงๆ
+  // (เช่น "0809369836 ครับ") แต่ Claude รอบนั้นไม่ได้ extract ใส่ analysis.phone ให้ (อาจตีความข้อความไปทางอื่น) ทำให้ collected.phone
+  // ยังว่างอยู่ ระบบเลยวนถามเบอร์ซ้ำข้อความเดิมไม่จบไม่สิ้น ทั้งที่ลูกค้าให้เบอร์มาแล้วจริงๆ -> เพิ่มตัวช่วยดึงเบอร์ด้วย regex ตรงๆ
+  // จากข้อความดิบเป็นตาข่ายนิรภัยสำรอง ไม่ต้องพึ่ง Claude สกัดให้ถูกทุกครั้ง (เหมือนหลักการเดียวกับ containsHighIntentKeyword/guessIntentFromText)
+  if (!collected.phone && rawMessage) {
+    const cleanedForPhone = rawMessage.replace(/[\s-]/g, "");
+    const phoneMatch = cleanedForPhone.match(/0[689]\d{8}/) || cleanedForPhone.match(/[689]\d{8}(?!\d)/);
+    if (phoneMatch) {
+      let foundPhone = phoneMatch[0];
+      if (foundPhone.length === 9) foundPhone = "0" + foundPhone;
+      collected.phone = foundPhone;
+    }
+  }
+
   if (analysis.intent_category) {
     const newIntent = analysis.intent_category;
     const oldIntent = collected.intent_category;
