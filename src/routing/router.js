@@ -419,6 +419,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   const shouldHandoff =
     !needsServiceEssentials &&
     !needsSalesEssentials &&
+    hasPhone &&
     (alreadyHandedOff
       ? explicitHighIntent
       : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
@@ -463,7 +464,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
     }
     return handleServiceHandoff({ collected, session, platform, userId, customerName, replyContext, forcedBranch, naturalReply });
   }
-  return handleGeneralHandoff({ collected, rawMessage, platform, userId, customerName });
+  return handleGeneralHandoff({ collected, session, rawMessage, platform, userId, customerName });
 }
 
 function resolveCustomerName(collected, customerName) {
@@ -483,12 +484,24 @@ async function resolveGeneralBranch(collected) {
   return branches.find((b) => (b.name || "").includes("สำนักงานใหญ่")) || branches[0] || null;
 }
 
-async function handleGeneralHandoff({ collected, rawMessage, platform, userId, customerName }) {
+async function handleGeneralHandoff({ collected, session, rawMessage, platform, userId, customerName }) {
   const finalCustomerName = resolveCustomerName(collected, customerName);
   const branch = await resolveGeneralBranch(collected);
 
   if (!branch) {
     return "แอดมินรับเรื่องไว้แล้วนะคะ เดี๋ยวให้ทีมงานติดต่อกลับไปนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
+  }
+
+  let assignedStaff = null;
+  if (session && session.pinnedStaffId) {
+    const pinned = await store.findStaffById(session.pinnedStaffId);
+    session.pinnedStaffId = null;
+    if (pinned && String(pinned.active).toUpperCase() === "TRUE") {
+      assignedStaff = pinned;
+    }
+  }
+  if (!assignedStaff) {
+    assignedStaff = await store.getSupervisorForBranch(branch.id);
   }
 
   const lead = {
@@ -498,8 +511,9 @@ async function handleGeneralHandoff({ collected, rawMessage, platform, userId, c
     intentCategory: "general",
     modelOrIssue: collected.model_or_issue || rawMessage || "(คำถามที่แอดมินตอบเองไม่ได้ ดูข้อความลูกค้าประกอบ)",
     branchId: branch.id,
-    staffName: "",
-    staffPhone: "",
+    staffId: assignedStaff ? assignedStaff.id : "",
+    staffName: assignedStaff ? assignedStaff.name : "",
+    staffPhone: assignedStaff ? assignedStaff.phone : "",
     phone: collected.phone || null,
     locationText: collected.location_text || null,
     status: "new",
@@ -520,18 +534,24 @@ async function handleGeneralHandoff({ collected, rawMessage, platform, userId, c
     (collected.hasMediaAttachment ? "📎 ลูกค้าส่ง" + collected.hasMediaAttachment + "มาด้วย (เปิดดูในแชท LINE ของลูกค้าโดยตรง)\n" : "") +
     "Lead ID: " + leadId;
 
-  const supervisor = await store.getSupervisorForBranch(branch.id);
-  if (supervisor && supervisor.lineUserId) {
+  if (assignedStaff && assignedStaff.lineUserId) {
     try {
-      await line.pushMessageWithAck(supervisor.lineUserId, notifyText, leadId);
+      await line.pushMessageWithAck(assignedStaff.lineUserId, notifyText, leadId);
     } catch (err) {
-      console.error("[router] handleGeneralHandoff notify supervisor error:", err.message);
+      console.error("[router] handleGeneralHandoff notify error:", err.message);
     }
   } else {
-    console.warn(`[router] สาขา ${branch.id} ยังไม่ได้ลงทะเบียนหัวหน้าสาขา (role=supervisor) ข้อความหลุด:`, notifyText);
+    console.warn(`[router] สาขา ${branch.id} ไม่มีคนรับผิดชอบที่ลงทะเบียน LINE ไว้ ข้อความหลุด:`, notifyText);
   }
 
-  return "แอดมินรับเรื่องไว้แล้วนะคะ 😊 เดี๋ยวให้ทีมงานที่ดูแลเรื่องนี้ช่วยตอบละเอียดอีกทีนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
+  if (assignedStaff) {
+    return (
+      `รับทราบค่ะ 😊 เดี๋ยวแอดมินให้คุณ ${assignedStaff.name} ติดต่อกลับไปนะคะ\n` +
+      `เบอร์ติดต่อ: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}\n\n` +
+      `ขอบคุณที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏`
+    );
+  }
+  return "แอดมินรับเรื่องไว้แล้วนะคะ 😊 เดี๋ยวให้ทีมงานที่ดูแลสาขานี้ช่วยตอบละเอียดอีกทีนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
 }
 
 async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent, naturalReply }) {
