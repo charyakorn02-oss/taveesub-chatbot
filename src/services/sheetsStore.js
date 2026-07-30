@@ -260,6 +260,12 @@ async function getModelList() {
 async function appendLead(lead) {
   const doc = await getDoc();
   const sheet = doc.sheetsByTitle['Leads'];
+  await sheet.loadHeaderRow();
+  // เพิ่มคอลัมน์ staffId ให้ชีต Leads อัตโนมัติถ้ายังไม่มี (กันเคสชีตเก่าที่สร้างไว้ก่อนจะมีฟีเจอร์นี้ ไม่ให้ addRow เงียบๆ ทิ้งค่านี้ไป)
+  // ใช้จำว่าลูกค้าคนนี้เคยคุยกับเซลคนไหน (อิงตาม staff id เพราะพนักงานอาจย้ายสาขาได้ ผูกกับ id แม่นกว่าผูกกับสาขา)
+  if (!sheet.headerValues.includes('staffId')) {
+    await sheet.setHeaderRow([...sheet.headerValues, 'staffId']);
+  }
   const existingRows = await sheet.getRows();
   const leadId = await genBranchSeqId('LD', sheet, existingRows, lead.branchId);
   const now = new Date().toISOString();
@@ -271,6 +277,7 @@ async function appendLead(lead) {
     intentCategory: lead.intentCategory || '',
     modelOrIssue: lead.modelOrIssue || '',
     branchId: lead.branchId || '',
+    staffId: lead.staffId || '',
     staffName: lead.staffName || '',
     staffPhone: lead.staffPhone || '',
     phone: lead.phone || '',
@@ -549,6 +556,8 @@ async function getLatestCustomerRecord(customerId) {
     .map((r) => ({
       source: 'lead',
       branchId: r.branchId || null,
+      // จำ staffId ที่เคยขายให้ลูกค้าคนนี้ไว้ด้วย (อิงตาม id ไม่ใช่สาขา เพราะพนักงานอาจย้ายสาขาไปแล้วก็ได้ อยากได้คนเดิมอยู่ดี)
+      staffId: r.staffId || null,
       phone: r.phone || null,
       customerName: r.customerName || null,
       createdAt: r.createdAt || null,
