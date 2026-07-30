@@ -232,7 +232,9 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       if (pendingHist.phone && !collected.phone) {
         collected.phone = pendingHist.phone;
       }
-      if (pendingHist.branchId && !collected.location_text && !collected.requested_staff_name) {
+      if (pendingHist.staffId) {
+        session.pinnedStaffId = pendingHist.staffId;
+      } else if (pendingHist.branchId && !collected.location_text && !collected.requested_staff_name) {
         if (collected.intent_category === "service") {
           session.confirmedServiceBranchId = pendingHist.branchId;
           session.serviceBranchIntroDone = true;
@@ -369,13 +371,25 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     session.historyConfirmAsked = true;
     const hist = session.knownHistory;
     const histBranch = hist.branchId ? await store.getBranchById(hist.branchId) : null;
+    const histStaff = hist.staffId ? await store.findStaffById(hist.staffId) : null;
+    const histStaffActive = histStaff && String(histStaff.active).toUpperCase() === "TRUE";
     const detailParts = [];
-    if (histBranch) detailParts.push(`สาขา ${histBranch.name}`);
+    if (histStaffActive) {
+      detailParts.push(`เซล ${histStaff.name}`);
+    } else if (histBranch) {
+      detailParts.push(`สาขา ${histBranch.name}`);
+    }
     if (hist.phone) detailParts.push(`เบอร์ ${hist.phone}`);
     if (detailParts.length > 0) {
       session.fallbackCount = 0;
-      session.pendingHistoryConfirm = { branchId: histBranch ? histBranch.id : null, phone: hist.phone || null };
-      const historyQuestion = `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
+      session.pendingHistoryConfirm = {
+        branchId: histBranch ? histBranch.id : null,
+        phone: hist.phone || null,
+        staffId: histStaffActive ? hist.staffId : null,
+      };
+      const historyQuestion = histStaffActive
+        ? `แอดมินเห็นว่าพี่เคยคุยกับเซล ${histStaff.name} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมที่สาขานี้เลยไหมคะ`
+        : `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
       const baseReply = (analysis.reply_text_to_customer || "").trim();
       return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
     }
@@ -523,7 +537,23 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   let routingMethod = "round_robin";
   const finalCustomerName = resolveCustomerName(collected, customerName);
 
-  if (session.pendingStaffBranchOptions && session.pendingStaffBranchOptions.length > 0) {
+  if (session.pinnedStaffId) {
+    const pinned = await store.findStaffById(session.pinnedStaffId);
+    session.pinnedStaffId = null;
+    if (pinned && String(pinned.active).toUpperCase() === "TRUE") {
+      const pinnedBranchIds = store.getStaffBranchIds(pinned);
+      if (pinnedBranchIds.length > 0) {
+        const pinnedBranch = await store.getBranchById(pinnedBranchIds[0]);
+        if (pinnedBranch) {
+          assignedStaff = pinned;
+          assignedBranch = pinnedBranch;
+          routingMethod = "requested";
+        }
+      }
+    }
+  }
+
+  if (!assignedStaff && session.pendingStaffBranchOptions && session.pendingStaffBranchOptions.length > 0) {
     const options = session.pendingStaffBranchOptions;
     const matchedOption = matchBranchFromText(rawMessage || "", options);
 
@@ -561,6 +591,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   // ทำให้ระบบเข้าใจผิดว่าลูกค้ากำลังขอเซลคนนั้น ทั้งที่จริงๆ แค่ลูกค้าแนะนำชื่อตัวเองหรือ Claude สับสนดึงชื่อลูกค้ามาใส่ผิดฟิลด์
   // ถ้าชื่อที่ระบุตรงกับชื่อลูกค้าเป๊ะๆ ให้ถือว่าไม่ได้ระบุชื่อเซลจริง (ปล่อยผ่านไปหาสาขาให้แบบปกติแทน)
   else if (
+    !assignedStaff &&
     collected.requested_staff_name &&
     (!finalCustomerName || collected.requested_staff_name.trim().toLowerCase() !== finalCustomerName.trim().toLowerCase())
   ) {
@@ -600,13 +631,13 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       const names = options.map((o) => o.branchName).join(" หรือ ");
       return `เบื้องต้นแอดมินไม่พบชื่อ "${collected.requested_staff_name}" ในระบบนะคะ 🙏 ขอทราบก่อนได้ไหมคะว่าพี่สะดวกไปสาขาไหนระหว่าง ${names} คะ`;
     }
-  } else if (intent === "buying_new") {
+  } else if (!assignedStaff && intent === "buying_new") {
     const resolved = await resolveAssignedBranchForBuyingNew({ collected, session, rawMessage });
     if (resolved.clarifyingReply) {
       return resolved.clarifyingReply;
     }
     assignedBranch = resolved.branch;
-  } else {
+  } else if (!assignedStaff) {
     if (session.confirmedGeneralBranchId) {
       const branches = await store.getActiveBranches();
       assignedBranch = branches.find((b) => b.id === session.confirmedGeneralBranchId) || (await resolveBranchDirect(collected));
@@ -637,6 +668,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
     intentCategory: intent,
     modelOrIssue: collected.model_or_issue || null,
     branchId: assignedBranch.id,
+    staffId: assignedStaff.id,
     staffName: assignedStaff.name,
     staffPhone: assignedStaff.phone,
     phone: collected.phone || null,
