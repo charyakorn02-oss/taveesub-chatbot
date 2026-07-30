@@ -408,7 +408,10 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   // (เช่น "เช็คระยะกี่กิโล") ระบบเห็นว่า data ครบอยู่แล้ว (claudeSaysComplete) เลยส่ง lead ซ้ำอัตโนมัติทันทีโดยไม่ได้ตอบคำถามลูกค้าเลย
   // -> ถ้าเคย handoff ไปแล้ว จะ handoff ซ้ำได้อีกครั้งเฉพาะตอนที่ "รอบนี้" มีสัญญาณ high-intent ใหม่จริงๆ เท่านั้น (เช่น "จอง", "โอนเงิน")
   // ไม่ใช่แค่เพราะข้อมูลเก่ายังครบอยู่เฉยๆ กรณีอื่นให้ตอบคำถามลูกค้าไปตามปกติก่อน ไม่ต้องส่ง lead ซ้ำ
-  const alreadyHandedOff = Boolean(session.handedOff);
+  // สำคัญมาก: ใช้ session.leadEverSent (ไม่ใช่ session.handedOff!) เพราะ session.handedOff เป็นฟิลด์คนละความหมายที่มีอยู่แล้ว
+  // ใน lineWebhook.js/facebookWebhook.js (เช็คว่า "พนักงานรับช่วงคุยเองแล้ว ให้บอทหยุดตอบถาวร") ถ้าตั้งชื่อชนกันจะทำให้บอทเงียบไม่ตอบอะไรเลย
+  // ทุกข้อความถัดไปหลัง handoff ครั้งแรก (บั๊กที่เจอจริงหลัง deploy fix นี้ครั้งก่อน — พิมพ์ไปไม่มีอะไรตอบกลับเลย)
+  const alreadyHandedOff = Boolean(session.leadEverSent);
   // สำคัญมาก: ตอน alreadyHandedOff แล้ว ห้ามใช้ analysis.high_intent_keyword (ที่ Claude ประเมินเอง) เด็ดขาด เพราะเจอบั๊กจริง
   // Claude มักประเมิน high_intent_keyword=true ผิดพลาดให้กับคำถามธรรมดา (เช่น "เช็คระยะกี่กิโล") ทำให้ยังส่ง lead ซ้ำอยู่ดี
   // ต้องใช้แค่ containsHighIntentKeyword (regex คำชัดเจนตายตัวอย่าง "จอง"/"โอนเงิน") เท่านั้นถึงจะยอมส่งซ้ำได้
@@ -448,7 +451,7 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
     collected.intent_category = intent;
   }
   // จำไว้ว่าเคย handoff (ส่ง lead) ไปแล้วในเซสชันนี้ กันบั๊กส่ง lead ซ้ำจากข้อมูลเก่า (ดูเงื่อนไข alreadyHandedOff ด้านบน)
-  session.handedOff = true;
+  session.leadEverSent = true;
 
   if (intent === "buying_new" || intent === "trade_in") {
     return handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent, naturalReply });
