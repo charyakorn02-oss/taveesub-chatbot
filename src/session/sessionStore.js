@@ -41,7 +41,7 @@ function trimHistoryForPersist(history) {
 
 async function getSession(platform, userId) {
   const key = keyFor(platform, userId);
-  if (sessions.has(key)) return applyTtl(sessions.get(key));
+  if (sessions.has(key)) return fixStuckHandedOff(applyTtl(sessions.get(key)));
 
   // ไม่มีใน memory (อาจเพิ่งรีสตาร์ทเซิร์ฟเวอร์ไป หรือเป็นลูกค้าใหม่จริงๆ) -> ลองโหลดจาก Sheets ก่อนสร้างใหม่
   let session = null;
@@ -52,9 +52,19 @@ async function getSession(platform, userId) {
     console.error("[sessionStore] โหลด session จาก Sheets ไม่สำเร็จ:", err.message);
   }
   if (!session) session = defaultSession();
-  session = applyTtl(session);
+  session = fixStuckHandedOff(applyTtl(session));
 
   sessions.set(key, session);
+  return session;
+}
+
+// บั๊กที่เจอจริง (แก้แล้วในโค้ดฝั่ง router.js) เคยมีจุดหนึ่งเซ็ต session.handedOff = true ผิดพลาด (ตั้งใจจะหมายถึง
+// "เคยส่ง lead ไปแล้ว" แต่ชื่อฟิลด์ชนกับ handedOff ตัวนี้ที่จริงๆ แปลว่า "พนักงานรับช่วงคุยเองแล้ว ให้บอทหยุดตอบถาวร"
+// ที่ lineWebhook.js/facebookWebhook.js เช็คอยู่) ทำให้ลูกค้าที่โดนบั๊กช่วงนั้นพิมพ์มาแล้วบอทไม่ตอบอะไรเลยแม้จะ deploy โค้ดที่แก้แล้วไปแล้วก็ตาม
+// (เพราะ session เดิมที่ค้าง handedOff:true อยู่ใน memory/Sheets ไม่ได้ถูกล้างอัตโนมัติ) ไม่มีจุดอื่นในระบบที่ตั้งใจเซ็ตค่านี้เป็น true จริงๆ
+// เลยปลอดภัยที่จะบังคับล้างทิ้งเป็น false เสมอตรงนี้ กันลูกค้าที่โดนบั๊กติดค้างไม่ได้รับคำตอบอีกต่อไป
+function fixStuckHandedOff(session) {
+  if (session && session.handedOff) session.handedOff = false;
   return session;
 }
 
