@@ -415,6 +415,31 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
+  // บั๊กที่เจอจริง: ลูกค้าตอบข้อความกำกวม/พิมพ์ผิด/สแลง (เช่น "เอ่อ" "ข้างบนนี้" "คุยไปแล้วหนิ") ที่ Claude ไม่เข้าใจซ้ำๆ
+  // ทำให้ Claude ตอบคำถามชี้แจงเดิมซ้ำ ("พี่สนใจเรื่องไหนคะ...") วนไม่จบไม่สิ้น เพราะไม่มีเบอร์โทรเก็บไว้เลย (hasPhone=false)
+  // เงื่อนไข shouldHandoff เดิมทุกเส้นทางต้องมีเบอร์ก่อนเสมอ เลยไม่มีทางออกจาก loop นี้ได้เลยถ้าลูกค้าไม่ให้เบอร์
+  // -> เพิ่มทางออกฉุกเฉิน 2 แบบ: (1) ลูกค้าพิมพ์คำที่บ่งชี้ว่ากำลังรำคาญ/บอกว่าเคยตอบไปแล้ว ให้ handoff ทันทีข้ามเงื่อนไขเบอร์
+  // (2) ถ้าค้าง fallback นานเกินไปมากๆ (เกิน FALLBACK_LIMIT ปกติไปอีกเท่าตัว) ก็บังคับ handoff เช่นกัน ดีกว่าปล่อยลูกค้าวนถามไม่จบ
+  const STUCK_LOOP_KEYWORDS = /คุยไปแล้ว|บอกไปแล้ว|ตอบไปแล้ว|พูดไปแล้ว|บอกแล้วไง|ถามซ้ำ|วนถาม|ข้างบนนี้|อ่านข้างบน|งงป่าว|ทำไมถามซ้ำ|ตอบไปหมดแล้ว/;
+  const HARD_FALLBACK_LIMIT = FALLBACK_LIMIT + 2;
+  if (
+    (STUCK_LOOP_KEYWORDS.test(rawMessage || "") && (session.fallbackCount || 0) >= 1) ||
+    (session.fallbackCount || 0) >= HARD_FALLBACK_LIMIT
+  ) {
+    session.fallbackCount = 0;
+    return performHandoff({
+      collected,
+      session,
+      rawMessage,
+      platform,
+      userId,
+      customerName,
+      replyContext,
+      highIntent: true,
+      naturalReply: analysis.reply_text_to_customer,
+    });
+  }
+
   const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage);
 
   const effectiveIntent = collected.intent_category || guessIntentFromText(rawMessage);
