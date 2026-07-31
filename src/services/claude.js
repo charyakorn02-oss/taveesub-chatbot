@@ -68,13 +68,27 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
       ]
     : textContent;
 
-  const messages = [
-    ...trimmedHistory,
-    {
-      role: "user",
-      content: userContent,
-    },
-  ];
+  // ตามที่ผู้ใช้ระบบขอ: อยาก "อ่านประวัติแชทเก่า" แบบประหยัดเครดิต ไม่ต้องจ่ายเต็มราคาซ้ำทุกข้อความในเซสชันเดียวกัน
+  // Anthropic เปิดให้แคช (prompt caching) ได้จริง แต่ระยะเวลาที่เลือกได้มีแค่ 2 แบบคือ 5 นาที (ปกติ) กับ 1 ชั่วโมง (extended, ต้องเปิด beta header)
+  // ไม่มีตัวเลือก "30 นาทีพอดี" ให้เลือกตรงๆ เลือกใช้ 1 ชั่วโมงเพราะใกล้เคียงและครอบคลุมพอสำหรับความยาวเซสชันคุยทั่วไป
+  // -> ถ้าลูกค้าคุยต่อเนื่องภายใน 1 ชม. ประวัติแชทเดิม (ที่เคยส่งไปแล้ว) จะถูกคิดราคาถูกลงมาก (แคช hit) แทนที่จะจ่ายเต็มราคาซ้ำทุกรอบ
+  // ถ้าห่างเกิน 1 ชม. แคชจะหมดอายุเอง รอบถัดไปจะ "อ่านใหม่" (เขียนแคชใหม่) ตามธรรมชาติ ไม่ต้องเขียนโค้ดจับเวลาเองเพิ่ม
+  // สำคัญ: นี่คือการลดต้นทุน ไม่ใช่การลดข้อมูลที่ Claude เห็น -> Claude ยังเห็นประวัติแชทครบเหมือนเดิมทุกประการทุกครั้ง แค่ราคาที่ AWS/Anthropic คิดถูกลง
+  const messages = [...trimmedHistory];
+  if (messages.length > 0) {
+    const lastIdx = messages.length - 1;
+    const lastMsg = messages[lastIdx];
+    const lastContent =
+      typeof lastMsg.content === "string" ? [{ type: "text", text: lastMsg.content }] : lastMsg.content;
+    const markedContent = lastContent.map((block, i) =>
+      i === lastContent.length - 1 ? { ...block, cache_control: { type: "ephemeral", ttl: "1h" } } : block
+    );
+    messages[lastIdx] = { ...lastMsg, content: markedContent };
+  }
+  messages.push({
+    role: "user",
+    content: userContent,
+  });
 
   let lastRawText = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -92,7 +106,8 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
             {
               type: "text",
               text: system,
-              cache_control: { type: "ephemeral" },
+              // ขยายจาก 5 นาทีเป็น 1 ชั่วโมง (ttl: "1h") เหมือนกับจุดแคชประวัติแชทด้านบน ให้สอดคล้องกันเป็นเซสชันเดียว
+              cache_control: { type: "ephemeral", ttl: "1h" },
             },
           ],
           messages,
@@ -102,6 +117,8 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
+            // ต้องเปิด beta header นี้ถึงจะใช้ cache_control ttl "1h" ได้ (ปกติ ephemeral cache แค่ 5 นาทีเฉยๆ)
+            "anthropic-beta": "extended-cache-ttl-2025-04-11",
           },
           timeout: 20000,
         }
