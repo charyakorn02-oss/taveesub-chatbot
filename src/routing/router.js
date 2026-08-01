@@ -248,6 +248,9 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       collected[f] = v;
     }
   });
+  if (collected.requested_staff_name && BRANCH_CHANGE_KEYWORDS.test(rawMessage || "")) {
+    collected.requested_staff_name = null;
+  }
 
   // บั๊กที่เจอจริง: บทสนทนาที่ไม่เข้าหมวดชัดเจน (เช่น general/ปรึกษาเรื่องไฟแนนซ์) บอทถามเบอร์ไปแล้ว ลูกค้าตอบเบอร์มาตรงๆ
   // (เช่น "0809369836 ครับ") แต่ Claude รอบนั้นไม่ได้ extract ใส่ analysis.phone ให้ (อาจตีความข้อความไปทางอื่น) ทำให้ collected.phone
@@ -791,6 +794,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   else if (
     !assignedStaff &&
     collected.requested_staff_name &&
+    !BRANCH_CHANGE_KEYWORDS.test(rawMessage || "") &&
     (!finalCustomerName || collected.requested_staff_name.trim().toLowerCase() !== finalCustomerName.trim().toLowerCase())
   ) {
     const matches = await store.findStaffMatches(collected.requested_staff_name, "sales");
