@@ -348,8 +348,13 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
+  // บั๊กที่เจอจริง: เดิมเงื่อนไขนี้บังคับ intent_category ต้องเป็น "buying_new" เป๊ะๆ เท่านั้นถึงจะเรียก Google Maps จริงมาวัดระยะ/หาสาขาใกล้สุดให้
+  // ทำให้เคสลูกค้าถาม "มีสาขาไหนบ้าง" พร้อมบอกพื้นที่มาในข้อความเดียวกัน (ยังไม่ทันเข้าสู่ flow ซื้อรถแบบเป็นขั้นตอน) หลุดไปให้ Claude ตอบเอง
+  // จากความรู้ตัวเอง (ไม่มีข้อมูลระยะทางจริงเลย) จนเคยเกิดบั๊กแต่งชื่อสถานที่ขึ้นมาเอง (เช่น "สถานีรถไฟฟ้านวนคร" ที่ไม่มีอยู่จริง) เพราะไม่ได้เรียก geocode จริง
+  // -> ขยายเงื่อนไขให้ครอบคลุมเคส intent ยังไม่ชัดเจน/general ด้วย (ยกเว้น service/trade_in ที่มี flow หาสาขาของตัวเองอยู่แล้วด้านล่าง) เพื่อให้ได้คำตอบที่วัดระยะจริงเสมอ ไม่ใช่ให้ Claude เดา
   if (
-    collected.intent_category === "buying_new" &&
+    collected.intent_category !== "service" &&
+    collected.intent_category !== "trade_in" &&
     collected.location_text &&
     !collected.requested_staff_name &&
     !collected.delivery_preference &&
