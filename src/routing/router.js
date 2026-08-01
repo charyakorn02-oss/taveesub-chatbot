@@ -160,6 +160,18 @@ async function introduceNearestServiceBranch(locationText, session) {
 // ทุกครั้งที่ประโยคจะบอกลูกค้าว่า "มีคนชื่อ X จะติดต่อกลับ" ต้องเช็คกับชีต Staff จริงๆ เสมอว่ามีพนักงานชื่อนี้อยู่จริงไหม (เจอ staffId จริง)
 // ไม่ใช่แค่เดาจากตัวสะกดอังกฤษเหมือนเดิม (เพราะชื่อหลอนอาจเป็นชื่อไทยก็ได้ เช่น ชื่อคนอื่นที่ลูกค้าเอ่ยถึงเอง) ถ้าเช็คแล้วไม่พบตัวตนจริงในระบบ ให้ตัดประโยคนั้นทิ้งเสมอ
 // กันหลอน (hallucination) แบบเดียวกับเคส "เซลล์ Cathy" ที่เจอจริง แต่ครอบคลุมกว้างขึ้นกว่าเดิม ไม่ใช่แค่ชื่อภาษาอังกฤษเท่านั้น
+// บั๊กที่เจอจริง: Claude เขียนประโยคปิดจบ/สัญญาว่าจะโทรกลับเอง (เช่น "เดี๋ยวเซลล์จะช่วยปรึกษาและจัดการให้ที่พี่ เบอร์ทีมงานจะโทรกลับไปตามเบอร์ 0809369836")
+// ทั้งที่ยังไม่ได้ผ่าน handoff จริงเลย (ยังไม่ได้ถามสาขา/ยืนยันข้อมูลตามลำดับปกติ) ประโยคแบบนี้ไม่มีคำว่า "ติดต่อ" เลยไม่โดน verifyContactPromiseAgainstStaff
+// กรองออก ต้องมีตัวกรองแยกอีกชั้น: เบอร์โทรที่จะบอกลูกค้าว่า "จะโทรกลับไปเบอร์นี้" ต้องมาจากระบบ handoff จริงเท่านั้น (performHandoff/handleGeneralHandoff ฯลฯ)
+// ห้ามให้ Claude พิมพ์เบอร์โทรของลูกค้าเองกลับไปในคำตอบ FAQ ทั่วไปเด็ดขาด ตัดทุกประโยคที่มีรูปแบบเบอร์โทร (9-10 หลัก) ทิ้งเสมอ
+function stripFabricatedPhoneClosing(text) {
+  if (!text) return text;
+  const sentences = text.split(/(?<=[.\n])/);
+  const phonePattern = /0[\d\s-]{8,11}\d/;
+  const filtered = sentences.filter((s) => !phonePattern.test(s));
+  return filtered.join("").trim();
+}
+
 async function verifyContactPromiseAgainstStaff(text) {
   if (!text) return text;
   const sentences = text.split(/(?<=[.\n])/);
@@ -189,6 +201,7 @@ async function verifyContactPromiseAgainstStaff(text) {
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   if (analysis && typeof analysis.reply_text_to_customer === "string") {
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
+    analysis.reply_text_to_customer = stripFabricatedPhoneClosing(analysis.reply_text_to_customer);
   }
   const collected = session.collected;
   const oldLocationTextBeforeMerge = collected.location_text || null;
