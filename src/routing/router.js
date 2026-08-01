@@ -332,10 +332,11 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
-  if (session.pendingHistoryConfirm) {
+  if (session.pendingHistoryConfirm && session.historyConfirmPending) {
     const pendingHist = session.pendingHistoryConfirm;
     session.pendingHistoryConfirm = null;
-    if (SAME_AS_BEFORE_KEYWORDS.test(rawMessage || "")) {
+    session.historyConfirmPending = false;
+    if ((rawMessage || "").trim().length <= 20 && SAME_AS_BEFORE_KEYWORDS.test(rawMessage || "")) {
       if (pendingHist.phone && !collected.phone) {
         collected.phone = pendingHist.phone;
       }
@@ -350,12 +351,13 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
           session.locationBranchIntroDone = true;
         }
       }
-    } else if (/สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลล์ไหน/.test(rawMessage || "")) {
+    } else if ((rawMessage || "").trim().length <= 25 && /สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลล์ไหน/.test(rawMessage || "")) {
       // บั๊กที่เจอจริง: คำถามยืนยันประวัติเดิมด้านบนไม่ได้ระบุชื่อสาขาจริงไว้ (เขียนแค่ "สาขานี้" ลอยๆ) ทำให้ลูกค้าไม่รู้ว่าหมายถึงสาขาไหน
       // แล้วถามกลับมาว่า "สาขาไหนนะ" แต่ระบบไม่ตอบคำถามนี้เลย กลับไปถามที่อยู่ใหม่ทันทีเหมือนไม่ได้ยินคำถามของลูกค้า (เอ๋อ)
       // -> ตอบให้ชัดเจนด้วยชื่อสาขา/เซลล์จริงจากข้อมูลที่ค้างไว้ แล้วคงคำถามเดิมไว้รอคำตอบต่ออีกรอบ ไม่ปล่อยผ่านไปถามเรื่องอื่น
       session.fallbackCount = 0;
       session.pendingHistoryConfirm = pendingHist;
+      session.historyConfirmPending = true;
       const clarifyStaff = pendingHist.staffId ? await store.findStaffById(pendingHist.staffId) : null;
       const clarifyBranch = pendingHist.branchId ? await store.getBranchById(pendingHist.branchId) : null;
       if (clarifyStaff) {
@@ -533,6 +535,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     if (hist.phone) detailParts.push(`เบอร์ ${normalizePhone(hist.phone)}`);
     if (detailParts.length > 0) {
       session.fallbackCount = 0;
+      session.historyConfirmPending = true;
       session.pendingHistoryConfirm = {
         branchId: histBranch ? histBranch.id : null,
         phone: normalizePhone(hist.phone) || null,
