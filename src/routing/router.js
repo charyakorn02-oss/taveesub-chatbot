@@ -18,6 +18,16 @@ const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผ�
 const SAME_AS_BEFORE_KEYWORDS = /เหมือนเดิม|ที่เดิม|เบอร์เดิม|สาขาเดิม|อันเดิม|ข้อมูลเดิม|คนเดิม|ใช้คนเดิม|^ใช่ค่ะ$|^ใช่ครับ$|^ใช่$|^ยืนยัน|^ตกลง|^โอเค|^ok|^ได้ค่ะ$|^ได้ครับ$|^ได้เลย|^ได้$|^สะดวก/i;
 const UNDECIDED_CONSULT_KEYWORDS = /ขอปรึกษาก่อน|ไม่รู้จะซื้อ|ยังไม่แน่ใจ|ไม่แน่ใจว่าจะซื้อ|ยังไม่ตัดสินใจ|แค่อยากปรึกษา|ปรึกษาเคส|ขอคิดดูก่อน|ขอไปคิดก่อน|ยังไม่พร้อม|ยังไม่ตกลงใจ|อยากสอบถามเฉยๆ|ยังไม่รีบ|ไม่รีบซื้อ|ขอถามเฉยๆก่อน/;
 
+// บั๊กที่เจอจริง: ตอนทวนเบอร์ลูกค้าเก่าจากประวัติ (session.knownHistory ที่ดึงจาก Sheets) โชว์เบอร์ขาดเลข 0 นำหน้า (เช่น "809369836")
+// เพราะข้อมูลเก่าที่เคยบันทึกไว้ในชีตตั้งแต่ก่อนจะมีตัวแก้เลข 0 นำหน้า (ตอน merge จาก analysis.phone) ยังมีค่าที่ขาด 0 อยู่ในชีตเดิม
+// เอาไปแสดงตรงๆ โดยไม่ได้ผ่านการเติม 0 กลับเหมือนตอน merge ข้อมูลใหม่ -> ต้อง normalize ทุกครั้งที่หยิบเบอร์เก่าจากประวัติมาใช้ ไม่ใช่แค่ตอน merge เบอร์ใหม่เท่านั้น
+function normalizePhone(v) {
+  if (!v || typeof v !== "string") return v;
+  const digitsOnly = v.replace(/\D/g, "");
+  if (/^[689]\d{8}$/.test(digitsOnly)) return "0" + digitsOnly;
+  return digitsOnly || v;
+}
+
 function containsHighIntentKeyword(text) {
   if (!text) return false;
   return HIGH_INTENT_KEYWORDS.some((k) => text.includes(k));
@@ -467,12 +477,12 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     } else if (histBranch) {
       detailParts.push(`สาขา ${histBranch.name}`);
     }
-    if (hist.phone) detailParts.push(`เบอร์ ${hist.phone}`);
+    if (hist.phone) detailParts.push(`เบอร์ ${normalizePhone(hist.phone)}`);
     if (detailParts.length > 0) {
       session.fallbackCount = 0;
       session.pendingHistoryConfirm = {
         branchId: histBranch ? histBranch.id : null,
-        phone: hist.phone || null,
+        phone: normalizePhone(hist.phone) || null,
         staffId: histStaffActive ? hist.staffId : null,
       };
       const historyQuestion = histStaffActive
@@ -633,13 +643,17 @@ async function handleGeneralHandoff({ collected, session, rawMessage, platform, 
   }
 
   if (assignedStaff) {
+    // ตามที่ผู้ใช้ระบบขอ: เคสทั่วไป (general) ก็ต้องแนบลิงก์แอดไลน์เซล/พนักงานที่มอบหมายให้ลูกค้าด้วยเหมือนเคสซื้อรถใหม่ (handleSalesHandoff)
+    // ไม่ใช่แค่บอกชื่อ+เบอร์เฉยๆ ลูกค้าจะได้แอดไลน์คุยต่อกับคนที่มอบหมายให้ได้ทันที และใช้คำว่า "เซล" นำหน้าชื่อให้ชัดเจนว่าเป็นพนักงานจริง
+    const addLineNoteGeneral = assignedStaff.lineAddUrl
+      ? `\n\nแอดไลน์เซล ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
+      : "";
     return (
-      `รับทราบค่ะ 😊 เดี๋ยวแอดมินให้คุณ ${assignedStaff.name} ติดต่อกลับไปนะคะ\n` +
+      `รับทราบค่ะ 😊 เดี๋ยวแอดมินให้เซล ${assignedStaff.name} ติดต่อกลับไปนะคะ\n` +
       `เบอร์ติดต่อ: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}\n\n` +
-      `ขอบคุณที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏`
+      `ขอบคุณที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏${addLineNoteGeneral}`
     );
-  }
-  return "แอดมินรับเรื่องไว้แล้วนะคะ 😊 เดี๋ยวให้ทีมงานที่ดูแลสาขานี้ช่วยตอบละเอียดอีกทีนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
+  }return "แอดมินรับเรื่องไว้แล้วนะคะ 😊 เดี๋ยวให้ทีมงานที่ดูแลสาขานี้ช่วยตอบละเอียดอีกทีนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
 }
 
 async function handleSalesHandoff({ collected, session, rawMessage, intent, platform, userId, customerName, replyContext, highIntent, naturalReply }) {
