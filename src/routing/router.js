@@ -1,4 +1,4 @@
-// หัวใจของระบบ: ตัดสินใจว่าถามต่อ หรือจะส่งต่อ (handoff) ให้เซล/ช่าง พร้อมหาสาขา+พนักงานที่เหมาะสม
+// หัวใจของระบบ: ตัดสินใจว่าถามต่อ หรือจะส่งต่อ (handoff) ให้เซลล์/ช่าง พร้อมหาสาขา+พนักงานที่เหมาะสม
 "use strict";
 
 const store = require("../services/store");
@@ -14,7 +14,7 @@ const HIGH_INTENT_KEYWORDS = [
 ];
 const FALLBACK_LIMIT = 2;
 const BRANCH_CHANGE_KEYWORDS = /เปลี่ยนสาขา|เปลี่ยนที่ซ่อม|ขอเปลี่ยนสาขา|สาขาอื่นแทน|เปลี่ยนเป็นสาขา|เปลี่ยนไปสาขา|สาขาไหนบ้าง|สาขาไหนใกล้|ใกล้ที่สุด|ใกล้สุด|สาขาอื่น|ขอเปลี่ยนที่|เปลี่ยนจุดนัด|สาขาใกล้บ้าน|สาขาแถวนี้มีไหม|สาขาแถวไหนบ้าง|มีสาขาแถว/;
-const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผิดคน|ผิดแผนก|ไม่ใช่ฝ่ายขาย|ไม่ใช่เซล|ไม่ใช่แผนกขาย|ส่งผิด|ส่งผิดที่|ติดต่อผิดคน|ส่งมาผิด|เข้าใจผิดแล้ว/;
+const WRONG_DEPARTMENT_KEYWORDS = /ส่งผิดแผนก|ส่งผิดคน|ผิดแผนก|ไม่ใช่ฝ่ายขาย|ไม่ใช่เซลล์|ไม่ใช่แผนกขาย|ส่งผิด|ส่งผิดที่|ติดต่อผิดคน|ส่งมาผิด|เข้าใจผิดแล้ว/;
 const SAME_AS_BEFORE_KEYWORDS = /เหมือนเดิม|ที่เดิม|เบอร์เดิม|สาขาเดิม|อันเดิม|ข้อมูลเดิม|คนเดิม|ใช้คนเดิม|^ใช่ค่ะ$|^ใช่ครับ$|^ใช่$|^ยืนยัน|^ตกลง|^โอเค|^ok|^ได้ค่ะ$|^ได้ครับ$|^ได้เลย|^ได้$|^สะดวก/i;
 const UNDECIDED_CONSULT_KEYWORDS = /ขอปรึกษาก่อน|ไม่รู้จะซื้อ|ยังไม่แน่ใจ|ไม่แน่ใจว่าจะซื้อ|ยังไม่ตัดสินใจ|แค่อยากปรึกษา|ปรึกษาเคส|ขอคิดดูก่อน|ขอไปคิดก่อน|ยังไม่พร้อม|ยังไม่ตกลงใจ|อยากสอบถามเฉยๆ|ยังไม่รีบ|ไม่รีบซื้อ|ขอถามเฉยๆก่อน/;
 
@@ -159,14 +159,14 @@ async function introduceNearestServiceBranch(locationText, session) {
 // อัปเกรดจาก stripFabricatedContactPromise เดิม (ที่กรองแค่ชื่อสะกดอังกฤษ) ตามที่ผู้ใช้ระบบขอ:
 // ทุกครั้งที่ประโยคจะบอกลูกค้าว่า "มีคนชื่อ X จะติดต่อกลับ" ต้องเช็คกับชีต Staff จริงๆ เสมอว่ามีพนักงานชื่อนี้อยู่จริงไหม (เจอ staffId จริง)
 // ไม่ใช่แค่เดาจากตัวสะกดอังกฤษเหมือนเดิม (เพราะชื่อหลอนอาจเป็นชื่อไทยก็ได้ เช่น ชื่อคนอื่นที่ลูกค้าเอ่ยถึงเอง) ถ้าเช็คแล้วไม่พบตัวตนจริงในระบบ ให้ตัดประโยคนั้นทิ้งเสมอ
-// กันหลอน (hallucination) แบบเดียวกับเคส "เซล Cathy" ที่เจอจริง แต่ครอบคลุมกว้างขึ้นกว่าเดิม ไม่ใช่แค่ชื่อภาษาอังกฤษเท่านั้น
+// กันหลอน (hallucination) แบบเดียวกับเคส "เซลล์ Cathy" ที่เจอจริง แต่ครอบคลุมกว้างขึ้นกว่าเดิม ไม่ใช่แค่ชื่อภาษาอังกฤษเท่านั้น
 async function verifyContactPromiseAgainstStaff(text) {
   if (!text) return text;
   const sentences = text.split(/(?<=[.\n])/);
   const kept = [];
   for (const s of sentences) {
     if (/ติดต่อ/.test(s)) {
-      const nameMatch = s.match(/(?:คุณ|เซล|พนักงาน|ช่าง|เจ้าหน้าที่)\s*([ก-๙A-Za-z]{2,})/);
+      const nameMatch = s.match(/(?:คุณ|เซลล์|พนักงาน|ช่าง|เจ้าหน้าที่)\s*([ก-๙A-Za-z]{2,})/);
       if (nameMatch) {
         const candidateName = nameMatch[1];
         let realActive = false;
@@ -317,17 +317,17 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
         }
       }
     } else if (/
-สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลไหน
+สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลล์ไหน
 /.test(rawMessage || "")) {
       // บั๊กที่เจอจริง: คำถามยืนยันประวัติเดิมด้านบนไม่ได้ระบุชื่อสาขาจริงไว้ (เขียนแค่ "สาขานี้" ลอยๆ) ทำให้ลูกค้าไม่รู้ว่าหมายถึงสาขาไหน
       // แล้วถามกลับมาว่า "สาขาไหนนะ" แต่ระบบไม่ตอบคำถามนี้เลย กลับไปถามที่อยู่ใหม่ทันทีเหมือนไม่ได้ยินคำถามของลูกค้า (เอ๋อ)
-      // -> ตอบให้ชัดเจนด้วยชื่อสาขา/เซลจริงจากข้อมูลที่ค้างไว้ แล้วคงคำถามเดิมไว้รอคำตอบต่ออีกรอบ ไม่ปล่อยผ่านไปถามเรื่องอื่น
+      // -> ตอบให้ชัดเจนด้วยชื่อสาขา/เซลล์จริงจากข้อมูลที่ค้างไว้ แล้วคงคำถามเดิมไว้รอคำตอบต่ออีกรอบ ไม่ปล่อยผ่านไปถามเรื่องอื่น
       session.fallbackCount = 0;
       session.pendingHistoryConfirm = pendingHist;
       const clarifyStaff = pendingHist.staffId ? await store.findStaffById(pendingHist.staffId) : null;
       const clarifyBranch = pendingHist.branchId ? await store.getBranchById(pendingHist.branchId) : null;
       if (clarifyStaff) {
-        return `เซล ${clarifyStaff.name}${clarifyBranch ? ` จากสาขา${clarifyBranch.name}` : ""} ค่ะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`;
+        return `เซลล์ ${clarifyStaff.name}${clarifyBranch ? ` จากสาขา${clarifyBranch.name}` : ""} ค่ะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`;
       }
       if (clarifyBranch) {
         return `สาขา${clarifyBranch.name}ค่ะ 😊 สะดวกใช้สาขาเดิมนี้ต่อเลยไหมคะ`;
@@ -489,7 +489,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     const histStaffActive = histStaff && String(histStaff.active).toUpperCase() === "TRUE";
     const detailParts = [];
     if (histStaffActive) {
-      detailParts.push(`เซล ${histStaff.name}`);
+      detailParts.push(`เซลล์ ${histStaff.name}`);
     } else if (histBranch) {
       detailParts.push(`สาขา ${histBranch.name}`);
     }
@@ -505,7 +505,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       // ต้องถามกลับมาเอง ("สาขาไหนนะ") ซึ่งระบบเดิมก็ไม่ตอบคำถามนี้อีก (ดูจุดแก้ QUESTION_ABOUT_HISTORY_KEYWORDS ด้านบน) -> แก้ต้นตอด้วยการใส่ชื่อสาขาจริงลงในคำถามตั้งแต่แรกเลย
       const branchPhrase = histBranch ? ` ที่สาขา${histBranch.name}` : "";
       const historyQuestion = histStaffActive
-        ? `แอดมินเห็นว่าพี่เคยคุยกับเซล ${histStaff.name}${branchPhrase} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`
+        ? `แอดมินเห็นว่าพี่เคยคุยกับเซลล์ ${histStaff.name}${branchPhrase} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`
         : `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
       const baseReply = (analysis.reply_text_to_customer || "").trim();
       return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
@@ -588,8 +588,16 @@ function resolveCustomerName(collected, customerName) {
   return collected.customer_name || customerName || "";
 }
 
-async function resolveGeneralBranch(collected) {
+async function resolveGeneralBranch(collected, session) {
   const branches = await store.getActiveBranches();
+  // บั๊กที่เจอจริง: ลูกค้าเคยเลือก/ยืนยันสาขาไว้ชัดเจนแล้วในเทิร์นก่อนหน้า (เช่น ตอบ "คลอง3" ตอนซื้อรถใหม่) แต่พอ intent เปลี่ยนเป็น
+  // general (เช่น ขอปรึกษาเรื่องบูโรก่อนตัดสินใจ) ฟังก์ชันนี้ไม่เคยเช็คสาขาที่ยืนยันไว้แล้วเลย ไปเดาจาก location_text (ที่มักว่างเปล่าเพราะ
+  // ลูกค้าตอบชื่อสาขาตรงๆ ไม่ใช่ที่อยู่ที่ต้อง geocode) แล้ว fallback ไปสำนักงานใหญ่แบบผิดๆ ทั้งที่ควรส่งไปสาขาที่ลูกค้าเลือกไว้แล้ว
+  if (session && (session.confirmedGeneralBranchId || session.confirmedServiceBranchId)) {
+    const confirmedId = session.confirmedGeneralBranchId || session.confirmedServiceBranchId;
+    const confirmedBranch = branches.find((b) => b.id === confirmedId);
+    if (confirmedBranch) return confirmedBranch;
+  }
   const geo = collected.location_text ? await geocode(collected.location_text) : null;
   if (geo && isServiceArea(geo.province)) {
     const ranked = branches
@@ -603,7 +611,7 @@ async function resolveGeneralBranch(collected) {
 
 async function handleGeneralHandoff({ collected, session, rawMessage, platform, userId, customerName }) {
   const finalCustomerName = resolveCustomerName(collected, customerName);
-  const branch = await resolveGeneralBranch(collected);
+  const branch = await resolveGeneralBranch(collected, session);
 
   if (!branch) {
     return "แอดมินรับเรื่องไว้แล้วนะคะ เดี๋ยวให้ทีมงานติดต่อกลับไปนะคะ ขอบคุณที่ทักมาคุยกับแอดมินนะคะ 🙏";
@@ -626,7 +634,13 @@ async function handleGeneralHandoff({ collected, session, rawMessage, platform, 
     customerId: userId,
     customerName: finalCustomerName,
     intentCategory: "general",
-    modelOrIssue: collected.model_or_issue || rawMessage || "(คำถามที่แอดมินตอบเองไม่ได้ ดูข้อความลูกค้าประกอบ)",
+    // บั๊กที่เจอจริง: เดิมใช้ collected.model_or_issue อย่างเดียว (ค้างค่าจากตอนถามรุ่นรถ เช่น "Forza 350") ทำให้ข้อความปรึกษาจริงๆ
+    // ของลูกค้ารอบนี้ (เช่น ปรึกษาเรื่องติดบูโร) หายไปจาก Lead ที่ส่งให้เซลล์เห็น ทั้งที่เป็นเหตุผลที่ต้อง handoff รอบนี้จริงๆ
+    // -> รวมทั้งสองอย่างเข้าด้วยกันเสมอเมื่อไม่ซ้ำกัน ให้เซลล์เห็นทั้งบริบทเดิมและคำถาม/ปัญหาที่ลูกค้าถามล่าสุดครบถ้วน
+    modelOrIssue:
+      collected.model_or_issue && rawMessage && !rawMessage.includes(collected.model_or_issue)
+        ? `${collected.model_or_issue} | ลูกค้าปรึกษาเพิ่มเติม: ${rawMessage}`
+        : collected.model_or_issue || rawMessage || "(คำถามที่แอดมินตอบเองไม่ได้ ดูข้อความลูกค้าประกอบ)",
     branchId: branch.id,
     staffId: assignedStaff ? assignedStaff.id : "",
     staffName: assignedStaff ? assignedStaff.name : "",
@@ -662,13 +676,13 @@ async function handleGeneralHandoff({ collected, session, rawMessage, platform, 
   }
 
   if (assignedStaff) {
-    // ตามที่ผู้ใช้ระบบขอ: เคสทั่วไป (general) ก็ต้องแนบลิงก์แอดไลน์เซล/พนักงานที่มอบหมายให้ลูกค้าด้วยเหมือนเคสซื้อรถใหม่ (handleSalesHandoff)
-    // ไม่ใช่แค่บอกชื่อ+เบอร์เฉยๆ ลูกค้าจะได้แอดไลน์คุยต่อกับคนที่มอบหมายให้ได้ทันที และใช้คำว่า "เซล" นำหน้าชื่อให้ชัดเจนว่าเป็นพนักงานจริง
+    // ตามที่ผู้ใช้ระบบขอ: เคสทั่วไป (general) ก็ต้องแนบลิงก์แอดไลน์เซลล์/พนักงานที่มอบหมายให้ลูกค้าด้วยเหมือนเคสซื้อรถใหม่ (handleSalesHandoff)
+    // ไม่ใช่แค่บอกชื่อ+เบอร์เฉยๆ ลูกค้าจะได้แอดไลน์คุยต่อกับคนที่มอบหมายให้ได้ทันที และใช้คำว่า "เซลล์" นำหน้าชื่อให้ชัดเจนว่าเป็นพนักงานจริง
     const addLineNoteGeneral = assignedStaff.lineAddUrl
-      ? `\n\nแอดไลน์เซล ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
+      ? `\n\nแอดไลน์เซลล์ ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
       : "";
     return (
-      `รับทราบค่ะ 😊 เดี๋ยวแอดมินให้เซล ${assignedStaff.name} ติดต่อกลับไปนะคะ\n` +
+      `รับทราบค่ะ 😊 เดี๋ยวแอดมินให้เซลล์ ${assignedStaff.name} ติดต่อกลับไปนะคะ\n` +
       `เบอร์ติดต่อ: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}\n\n` +
       `ขอบคุณที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 🙏${addLineNoteGeneral}`
     );
@@ -731,9 +745,9 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       session.pendingStaffBranchAskCount = 0;
     }
   }
-  // กันบั๊กที่เจอจริง: requested_staff_name ดันเป็นชื่อเดียวกับชื่อลูกค้าเอง (เช่น ลูกค้าชื่อ "มาร์ค" บังเอิญมีเซลชื่อ "มาร์ค" ในระบบด้วย)
-  // ทำให้ระบบเข้าใจผิดว่าลูกค้ากำลังขอเซลคนนั้น ทั้งที่จริงๆ แค่ลูกค้าแนะนำชื่อตัวเองหรือ Claude สับสนดึงชื่อลูกค้ามาใส่ผิดฟิลด์
-  // ถ้าชื่อที่ระบุตรงกับชื่อลูกค้าเป๊ะๆ ให้ถือว่าไม่ได้ระบุชื่อเซลจริง (ปล่อยผ่านไปหาสาขาให้แบบปกติแทน)
+  // กันบั๊กที่เจอจริง: requested_staff_name ดันเป็นชื่อเดียวกับชื่อลูกค้าเอง (เช่น ลูกค้าชื่อ "มาร์ค" บังเอิญมีเซลล์ชื่อ "มาร์ค" ในระบบด้วย)
+  // ทำให้ระบบเข้าใจผิดว่าลูกค้ากำลังขอเซลล์คนนั้น ทั้งที่จริงๆ แค่ลูกค้าแนะนำชื่อตัวเองหรือ Claude สับสนดึงชื่อลูกค้ามาใส่ผิดฟิลด์
+  // ถ้าชื่อที่ระบุตรงกับชื่อลูกค้าเป๊ะๆ ให้ถือว่าไม่ได้ระบุชื่อเซลล์จริง (ปล่อยผ่านไปหาสาขาให้แบบปกติแทน)
   else if (
     !assignedStaff &&
     collected.requested_staff_name &&
@@ -796,7 +810,7 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
   }
 
   if (!assignedStaff || !assignedBranch) {
-    return "ขอโทษด้วยนะคะ ตอนนี้คิวเซลเต็มชั่วคราว แอดมินจะรีบให้ทีมงานติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ 🙏";
+    return "ขอโทษด้วยนะคะ ตอนนี้คิวเซลล์เต็มชั่วคราว แอดมินจะรีบให้ทีมงานติดต่อกลับไปโดยเร็วที่สุดเลยค่ะ 🙏";
   }
 
   if (intent === "trade_in") {
@@ -869,19 +883,19 @@ async function handleSalesHandoff({ collected, session, rawMessage, intent, plat
       : "";
   const nameGreeting = finalCustomerName ? `คุณ${finalCustomerName} ` : "";
   const addLineNote = assignedStaff.lineAddUrl
-    ? `\n\nแอดไลน์เซล ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
+    ? `\n\nแอดไลน์เซลล์ ${assignedStaff.name} ไว้คุยต่อได้เลยนะคะ: ${assignedStaff.lineAddUrl}`
     : "";
 
   const tradeInPriceNote =
     intent === "trade_in"
-      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซล ${assignedStaff.name} ${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
+      ? ` สามารถส่งภาพรถคันเดิมเพื่อขอประเมินราคาเบื้องต้นได้ที่เซลล์ ${assignedStaff.name} ${assignedBranch.name}เลยนะคะ (ราคาที่ประเมินเป็นเพียงราคาเบื้องต้นเท่านั้นนะคะ ต้องนำรถเข้ามาตรวจเช็คสภาพจริงที่สาขาอีกครั้งเพื่อประเมินราคาสุดท้าย)`
       : "";
 
   return (
     `เรียบร้อยค่ะ${nameGreeting ? " " + nameGreeting : ""}! 🙏 ขอบคุณมากๆ นะคะที่ไว้วางใจทวีทรัพย์ยานยนต์ค่ะ 😊\n\n` +
     `แอดมินส่งข้อมูลของพี่ให้ทีมงาน${assignedBranch.name}เรียบร้อยแล้วนะคะ ${deliveryLine}\n` +
-    `เดี๋ยวจะมีเซลชื่อ ${assignedStaff.name} จากสาขานี้ติดต่อกลับไปหาพี่เร็วๆ นี้เลยนะคะ\n` +
-    `เบอร์เซล: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}\n\n` +
+    `เดี๋ยวจะมีเซลล์ชื่อ ${assignedStaff.name} จากสาขานี้ติดต่อกลับไปหาพี่เร็วๆ นี้เลยนะคะ\n` +
+    `เบอร์เซลล์: ${assignedStaff.phone || "รอเบอร์ติดต่อ"}\n\n` +
     `รบกวนรอสักครู่นะคะ${tradeInPriceNote}${addLineNote}`
   );
 }
@@ -1228,7 +1242,7 @@ async function notifyStaffDirect(staff, text, leadId, branchId) {
   const supervisor = await store.getSupervisorForBranch(effectiveBranchId);
   if (supervisor && supervisor.lineUserId) {
     try {
-      await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซล ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + fullText, allIds);
+      await line.pushMessageWithAck(supervisor.lineUserId, `⚠️ (เซลล์ ${staff.name} ยังไม่ได้ลงทะเบียนไลน์) ` + fullText, allIds);
       return;
     } catch (err) {
       console.error("[router] notifyStaffDirect supervisor fallback error:", err.message);
