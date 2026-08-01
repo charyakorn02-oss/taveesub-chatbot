@@ -316,6 +316,22 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
           session.locationBranchIntroDone = true;
         }
       }
+    } else if (/
+สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลไหน
+/.test(rawMessage || "")) {
+      // บั๊กที่เจอจริง: คำถามยืนยันประวัติเดิมด้านบนไม่ได้ระบุชื่อสาขาจริงไว้ (เขียนแค่ "สาขานี้" ลอยๆ) ทำให้ลูกค้าไม่รู้ว่าหมายถึงสาขาไหน
+      // แล้วถามกลับมาว่า "สาขาไหนนะ" แต่ระบบไม่ตอบคำถามนี้เลย กลับไปถามที่อยู่ใหม่ทันทีเหมือนไม่ได้ยินคำถามของลูกค้า (เอ๋อ)
+      // -> ตอบให้ชัดเจนด้วยชื่อสาขา/เซลจริงจากข้อมูลที่ค้างไว้ แล้วคงคำถามเดิมไว้รอคำตอบต่ออีกรอบ ไม่ปล่อยผ่านไปถามเรื่องอื่น
+      session.fallbackCount = 0;
+      session.pendingHistoryConfirm = pendingHist;
+      const clarifyStaff = pendingHist.staffId ? await store.findStaffById(pendingHist.staffId) : null;
+      const clarifyBranch = pendingHist.branchId ? await store.getBranchById(pendingHist.branchId) : null;
+      if (clarifyStaff) {
+        return `เซล ${clarifyStaff.name}${clarifyBranch ? ` จากสาขา${clarifyBranch.name}` : ""} ค่ะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`;
+      }
+      if (clarifyBranch) {
+        return `สาขา${clarifyBranch.name}ค่ะ 😊 สะดวกใช้สาขาเดิมนี้ต่อเลยไหมคะ`;
+      }
     }
   }
 
@@ -485,8 +501,11 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
         phone: normalizePhone(hist.phone) || null,
         staffId: histStaffActive ? hist.staffId : null,
       };
+      // บั๊กที่เจอจริง: เดิมข้อความนี้เขียนแค่ "สาขานี้" ลอยๆ โดยไม่เคยระบุชื่อสาขาจริงเลยสักคำ ทำให้ลูกค้าไม่รู้ว่า "สาขานี้" หมายถึงสาขาไหน
+      // ต้องถามกลับมาเอง ("สาขาไหนนะ") ซึ่งระบบเดิมก็ไม่ตอบคำถามนี้อีก (ดูจุดแก้ QUESTION_ABOUT_HISTORY_KEYWORDS ด้านบน) -> แก้ต้นตอด้วยการใส่ชื่อสาขาจริงลงในคำถามตั้งแต่แรกเลย
+      const branchPhrase = histBranch ? ` ที่สาขา${histBranch.name}` : "";
       const historyQuestion = histStaffActive
-        ? `แอดมินเห็นว่าพี่เคยคุยกับเซล ${histStaff.name} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมที่สาขานี้เลยไหมคะ`
+        ? `แอดมินเห็นว่าพี่เคยคุยกับเซล ${histStaff.name}${branchPhrase} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`
         : `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
       const baseReply = (analysis.reply_text_to_customer || "").trim();
       return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
