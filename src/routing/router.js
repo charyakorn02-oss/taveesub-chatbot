@@ -172,6 +172,25 @@ function stripFabricatedPhoneClosing(text) {
   return filtered.join("").trim();
 }
 
+// บั๊กที่เจอจริง (ซ้ำอีกรอบแม้เพิ่มกฎในพรอมต์ห้ามไปแล้ว): Claude ยังคงแต่งชื่อสถานที่/สถานีรถไฟฟ้าที่ไม่มีอยู่จริงขึ้นมาเองอยู่ดี (เช่น "สถานีรถไฟฟ้านวนคร")
+// เพราะกฎในพรอมต์เป็นแค่คำแนะนำ ไม่ใช่การบังคับ 100% (LLM ทำตามไม่ได้ทุกครั้ง) ต้องมีตัวกรองโค้ดเป็นตาข่ายนิรภัยอีกชั้นเหมือนที่ทำกับชื่อพนักงาน/เบอร์โทรก่อนหน้า
+// ตัดทุกประโยคที่พูดถึง "สถานีรถไฟฟ้า/สถานีรถไฟ/BTS/MRT" ทิ้งเสมอ ยกเว้นลูกค้าเป็นคนพิมพ์คำนั้นมาเองในข้อความ (rawMessage) เท่านั้นถึงจะถือว่าไม่ได้แต่งขึ้นมาเอง
+// บั๊กที่เจอจริง: Claude ยังใช้คำว่า "มัน" แทนพื้นที่ของลูกค้าอยู่ (ฟังดูไม่สุภาพ) แม้เพิ่มกฎในพรอมต์ห้ามแล้วก็ตาม -> แทนที่ด้วยคำสุภาพกว่าเสมอที่ระดับโค้ด กันเหนียวเช่นกัน
+function replaceRudeMan(text) {
+  if (!text) return text;
+  return text.replace(/มัน/g, "บริเวณนี้");
+}
+
+function stripFabricatedLandmarkMentions(text, rawMessage) {
+  if (!text) return text;
+  const landmarkPattern = /สถานีรถไฟฟ้า|สถานีรถไฟ|BTS|MRT/i;
+  const rawHasLandmark = landmarkPattern.test(rawMessage || "");
+  if (rawHasLandmark) return text; // ลูกค้าพูดถึงสถานีเองก่อน ไม่ถือว่าแต่งขึ้นมา ปล่อยผ่าน
+  const sentences = text.split(/(?<=[.\n])/);
+  const filtered = sentences.filter((s) => !landmarkPattern.test(s));
+  return filtered.join("").trim();
+}
+
 async function verifyContactPromiseAgainstStaff(text) {
   if (!text) return text;
   const sentences = text.split(/(?<=[.\n])/);
@@ -202,6 +221,8 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   if (analysis && typeof analysis.reply_text_to_customer === "string") {
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
     analysis.reply_text_to_customer = stripFabricatedPhoneClosing(analysis.reply_text_to_customer);
+    analysis.reply_text_to_customer = stripFabricatedLandmarkMentions(analysis.reply_text_to_customer, rawMessage);
+    analysis.reply_text_to_customer = replaceRudeMan(analysis.reply_text_to_customer);
   }
   const collected = session.collected;
   const oldLocationTextBeforeMerge = collected.location_text || null;
