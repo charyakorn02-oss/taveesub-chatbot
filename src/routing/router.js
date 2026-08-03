@@ -282,14 +282,7 @@ function computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, ana
   return routingState;
 }
 
-async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
-  if (analysis && typeof analysis.reply_text_to_customer === "string") {
-    analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
-    analysis.reply_text_to_customer = stripFabricatedPhoneClosing(analysis.reply_text_to_customer);
-    analysis.reply_text_to_customer = stripFabricatedLandmarkMentions(analysis.reply_text_to_customer, rawMessage);
-    analysis.reply_text_to_customer = replaceRudeMan(analysis.reply_text_to_customer);
-  }
-  const collected = session.collected;
+function mergeCollectedFields(collected, session, analysis, rawMessage) {
   const oldLocationTextBeforeMerge = collected.location_text || null;
   const fieldsToMerge = [
     "customer_name",
@@ -372,6 +365,17 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     session.pendingBranchChoiceIds = null;
     session.pendingServiceBranchIds = null;
   }
+}
+
+async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
+  if (analysis && typeof analysis.reply_text_to_customer === "string") {
+    analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
+    analysis.reply_text_to_customer = stripFabricatedPhoneClosing(analysis.reply_text_to_customer);
+    analysis.reply_text_to_customer = stripFabricatedLandmarkMentions(analysis.reply_text_to_customer, rawMessage);
+    analysis.reply_text_to_customer = replaceRudeMan(analysis.reply_text_to_customer);
+  }
+  const collected = session.collected;
+  mergeCollectedFields(collected, session, analysis, rawMessage);
 
   if (session.lastServiceBooking && BRANCH_CHANGE_KEYWORDS.test(rawMessage || "")) {
     session.fallbackCount = 0;
