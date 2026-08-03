@@ -551,6 +551,9 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
         ? `แอดมินเห็นว่าพี่เคยคุยกับเซลล์ ${histStaff.name}${branchPhrase} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`
         : `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
       const baseReply = (analysis.reply_text_to_customer || "").trim();
+      if (effectiveIntent === "service") {
+        return baseReply || historyQuestion;
+      }
       return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
     }
   }
