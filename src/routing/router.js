@@ -638,6 +638,24 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
       ? explicitHighIntent
       : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
 
+  // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
+  // เพื่อให้ debug ง่ายขึ้น ไม่ต้องไล่ตัวแปรกระจัดกระจายหลายจุดแบบเดิมเวลาบอทตอบวนซ้ำ/ไม่ยอมส่งต่อ
+  const routingState = {
+    effectiveIntent,
+    needsBranchInfo,
+    needsServiceEssentials,
+    needsSalesEssentials,
+    hasPhone,
+    claudeSaysComplete,
+    highIntent,
+    lowConfidence,
+    alreadyHandedOff,
+    explicitHighIntent,
+    fallbackCount: session.fallbackCount || 0,
+    shouldHandoff,
+  };
+  console.log("[router] routingState:", JSON.stringify(routingState));
+
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
     return (
