@@ -639,7 +639,7 @@ async function resolveGeneralBranch(collected, session) {
   // บั๊กที่เจอจริง: ลูกค้าเคยเลือก/ยืนยันสาขาไว้ชัดเจนแล้วในเทิร์นก่อนหน้า (เช่น ตอบ "คลอง3" ตอนซื้อรถใหม่) แต่พอ intent เปลี่ยนเป็น
   // general (เช่น ขอปรึกษาเรื่องบูโรก่อนตัดสินใจ) ฟังก์ชันนี้ไม่เคยเช็คสาขาที่ยืนยันไว้แล้วเลย ไปเดาจาก location_text (ที่มักว่างเปล่าเพราะ
   // ลูกค้าตอบชื่อสาขาตรงๆ ไม่ใช่ที่อยู่ที่ต้อง geocode) แล้ว fallback ไปสำนักงานใหญ่แบบผิดๆ ทั้งที่ควรส่งไปสาขาที่ลูกค้าเลือกไว้แล้ว
-  if (session && (session.confirmedGeneralBranchId || session.confirmedServiceBranchId)) {
+  if (session && (session.confirmedGeneralBranchId || session.confirmedServiceBranchId) && !collected.location_text) {
     const confirmedId = session.confirmedGeneralBranchId || session.confirmedServiceBranchId;
     const confirmedBranch = branches.find((b) => b.id === confirmedId);
     if (confirmedBranch) return confirmedBranch;
