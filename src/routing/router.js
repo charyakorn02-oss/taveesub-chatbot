@@ -232,6 +232,56 @@ async function verifyContactPromiseAgainstStaff(text) {
   return kept.join("").trim();
 }
 
+function computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, analysis, session, highIntent, lowConfidence, rawMessage) {
+  const needsServiceEssentials =
+    effectiveIntent === "service" && (!collected.phone || !collected.preferred_date || needsBranchInfo);
+
+  const needsSalesEssentials =
+    (effectiveIntent === "buying_new" || effectiveIntent === "trade_in") &&
+    (needsBranchInfo || !collected.phone || (effectiveIntent === "buying_new" && !collected.delivery_preference));
+
+  const hasPhone = Boolean(collected.phone);
+  const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
+  // บั๊กที่เจอจริง: เคย handoff ส่ง lead ไปแล้วรอบนึง (ข้อมูลลูกค้า/สาขา/เบอร์ครบหมดแล้วจากตอนนั้น) พอลูกค้าทักมาใหม่ถามคำถามธรรมดา
+  // (เช่น "เช็คระยะกี่กิโล") ระบบเห็นว่า data ครบอยู่แล้ว (claudeSaysComplete) เลยส่ง lead ซ้ำอัตโนมัติทันทีโดยไม่ได้ตอบคำถามลูกค้าเลย
+  // -> ถ้าเคย handoff ไปแล้ว จะ handoff ซ้ำได้อีกครั้งเฉพาะตอนที่ "รอบนี้" มีสัญญาณ high-intent ใหม่จริงๆ เท่านั้น (เช่น "จอง", "โอนเงิน")
+  // ไม่ใช่แค่เพราะข้อมูลเก่ายังครบอยู่เฉยๆ กรณีอื่นให้ตอบคำถามลูกค้าไปตามปกติก่อน ไม่ต้องส่ง lead ซ้ำ
+  // สำคัญมาก: ใช้ session.leadEverSent (ไม่ใช่ session.handedOff!) เพราะ session.handedOff เป็นฟิลด์คนละความหมายที่มีอยู่แล้ว
+  // ใน lineWebhook.js/facebookWebhook.js (เช็คว่า "พนักงานรับช่วงคุยเองแล้ว ให้บอทหยุดตอบถาวร") ถ้าตั้งชื่อชนกันจะทำให้บอทเงียบไม่ตอบอะไรเลย
+  // ทุกข้อความถัดไปหลัง handoff ครั้งแรก (บั๊กที่เจอจริงหลัง deploy fix นี้ครั้งก่อน — พิมพ์ไปไม่มีอะไรตอบกลับเลย)
+  const alreadyHandedOff = Boolean(session.leadEverSent);
+  // สำคัญมาก: ตอน alreadyHandedOff แล้ว ห้ามใช้ analysis.high_intent_keyword (ที่ Claude ประเมินเอง) เด็ดขาด เพราะเจอบั๊กจริง
+  // Claude มักประเมิน high_intent_keyword=true ผิดพลาดให้กับคำถามธรรมดา (เช่น "เช็คระยะกี่กิโล") ทำให้ยังส่ง lead ซ้ำอยู่ดี
+  // ต้องใช้แค่ containsHighIntentKeyword (regex คำชัดเจนตายตัวอย่าง "จอง"/"โอนเงิน") เท่านั้นถึงจะยอมส่งซ้ำได้
+  const explicitHighIntent = containsHighIntentKeyword(rawMessage);
+  const shouldHandoff =
+    !needsServiceEssentials &&
+    !needsSalesEssentials &&
+    hasPhone &&
+    (alreadyHandedOff
+      ? (explicitHighIntent || (lowConfidence && hasPhone))
+      : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
+
+  // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
+  // เพื่อให้ debug ง่ายขึ้น ไม่ต้องไล่ตัวแปรกระจัดกระจายหลายจุดแบบเดิมเวลาบอทตอบวนซ้ำ/ไม่ยอมส่งต่อ
+  const routingState = {
+    effectiveIntent,
+    needsBranchInfo,
+    needsServiceEssentials,
+    needsSalesEssentials,
+    hasPhone,
+    claudeSaysComplete,
+    highIntent,
+    lowConfidence,
+    alreadyHandedOff,
+    explicitHighIntent,
+    fallbackCount: session.fallbackCount || 0,
+    shouldHandoff,
+  };
+  console.log("[router] routingState:", JSON.stringify(routingState));
+  return routingState;
+}
+
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   if (analysis && typeof analysis.reply_text_to_customer === "string") {
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
@@ -609,52 +659,8 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
-  const needsServiceEssentials =
-    effectiveIntent === "service" && (!collected.phone || !collected.preferred_date || needsBranchInfo);
-
-  const needsSalesEssentials =
-    (effectiveIntent === "buying_new" || effectiveIntent === "trade_in") &&
-    (needsBranchInfo || !collected.phone || (effectiveIntent === "buying_new" && !collected.delivery_preference));
-
-  const hasPhone = Boolean(collected.phone);
-  const claudeSaysComplete = Boolean(analysis.data_complete) && hasPhone;
-  // บั๊กที่เจอจริง: เคย handoff ส่ง lead ไปแล้วรอบนึง (ข้อมูลลูกค้า/สาขา/เบอร์ครบหมดแล้วจากตอนนั้น) พอลูกค้าทักมาใหม่ถามคำถามธรรมดา
-  // (เช่น "เช็คระยะกี่กิโล") ระบบเห็นว่า data ครบอยู่แล้ว (claudeSaysComplete) เลยส่ง lead ซ้ำอัตโนมัติทันทีโดยไม่ได้ตอบคำถามลูกค้าเลย
-  // -> ถ้าเคย handoff ไปแล้ว จะ handoff ซ้ำได้อีกครั้งเฉพาะตอนที่ "รอบนี้" มีสัญญาณ high-intent ใหม่จริงๆ เท่านั้น (เช่น "จอง", "โอนเงิน")
-  // ไม่ใช่แค่เพราะข้อมูลเก่ายังครบอยู่เฉยๆ กรณีอื่นให้ตอบคำถามลูกค้าไปตามปกติก่อน ไม่ต้องส่ง lead ซ้ำ
-  // สำคัญมาก: ใช้ session.leadEverSent (ไม่ใช่ session.handedOff!) เพราะ session.handedOff เป็นฟิลด์คนละความหมายที่มีอยู่แล้ว
-  // ใน lineWebhook.js/facebookWebhook.js (เช็คว่า "พนักงานรับช่วงคุยเองแล้ว ให้บอทหยุดตอบถาวร") ถ้าตั้งชื่อชนกันจะทำให้บอทเงียบไม่ตอบอะไรเลย
-  // ทุกข้อความถัดไปหลัง handoff ครั้งแรก (บั๊กที่เจอจริงหลัง deploy fix นี้ครั้งก่อน — พิมพ์ไปไม่มีอะไรตอบกลับเลย)
-  const alreadyHandedOff = Boolean(session.leadEverSent);
-  // สำคัญมาก: ตอน alreadyHandedOff แล้ว ห้ามใช้ analysis.high_intent_keyword (ที่ Claude ประเมินเอง) เด็ดขาด เพราะเจอบั๊กจริง
-  // Claude มักประเมิน high_intent_keyword=true ผิดพลาดให้กับคำถามธรรมดา (เช่น "เช็คระยะกี่กิโล") ทำให้ยังส่ง lead ซ้ำอยู่ดี
-  // ต้องใช้แค่ containsHighIntentKeyword (regex คำชัดเจนตายตัวอย่าง "จอง"/"โอนเงิน") เท่านั้นถึงจะยอมส่งซ้ำได้
-  const explicitHighIntent = containsHighIntentKeyword(rawMessage);
-  const shouldHandoff =
-    !needsServiceEssentials &&
-    !needsSalesEssentials &&
-    hasPhone &&
-    (alreadyHandedOff
-      ? (explicitHighIntent || (lowConfidence && hasPhone))
-      : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
-
-  // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
-  // เพื่อให้ debug ง่ายขึ้น ไม่ต้องไล่ตัวแปรกระจัดกระจายหลายจุดแบบเดิมเวลาบอทตอบวนซ้ำ/ไม่ยอมส่งต่อ
-  const routingState = {
-    effectiveIntent,
-    needsBranchInfo,
-    needsServiceEssentials,
-    needsSalesEssentials,
-    hasPhone,
-    claudeSaysComplete,
-    highIntent,
-    lowConfidence,
-    alreadyHandedOff,
-    explicitHighIntent,
-    fallbackCount: session.fallbackCount || 0,
-    shouldHandoff,
-  };
-  console.log("[router] routingState:", JSON.stringify(routingState));
+  const routingState = computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, analysis, session, highIntent, lowConfidence, rawMessage);
+  const { needsServiceEssentials, needsSalesEssentials, hasPhone, claudeSaysComplete, alreadyHandedOff, explicitHighIntent, shouldHandoff } = routingState;
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
