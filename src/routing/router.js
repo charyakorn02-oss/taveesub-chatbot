@@ -269,9 +269,19 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   if (analysis.intent_category) {
     const newIntent = analysis.intent_category;
     const oldIntent = collected.intent_category;
-    if (!oldIntent || newIntent === oldIntent || intentKeywordMatches(newIntent, rawMessage)) {
-      collected.intent_category = newIntent;
+    if (oldIntent && newIntent !== oldIntent) {
+      // เปลี่ยนหัวข้อคุย (Claude ตัดสินใจจากบริบทข้อความทั้งหมด ไม่ใช่แค่ keyword match): เคลียร์สถานะที่ผูกกับหัวข้อเดิมทิ้ง
+      // กันข้อมูล/สาขา/พนักงานจากเรื่องเก่าปนกับเรื่องใหม่ (บั๊กที่เจอจริงหลายครั้ง)
+      session.pinnedStaffId = null;
+      session.confirmedGeneralBranchId = null;
+      session.confirmedServiceBranchId = null;
+      session.pendingStaffBranchOptions = null;
+      session.pendingStaffCandidateIds = null;
+      session.pendingHistoryConfirm = null;
+      session.historyConfirmPending = false;
+      collected.requested_staff_name = null;
     }
+    collected.intent_category = newIntent;
   }
   if (UNDECIDED_CONSULT_KEYWORDS.test(rawMessage || "")) {
     collected.intent_category = "general";
