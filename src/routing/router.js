@@ -529,7 +529,14 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     });
   }
 
-  const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage);
+  const lowConfidence = analysis.has_confident_answer === false;
+  if (lowConfidence && analysis.reply_text_to_customer) {
+    analysis.reply_text_to_customer = collected.phone
+      ? "เดี๋ยวแอดมินขอให้ทีมงานที่เกี่ยวข้องช่วยเช็คแล้วติดต่อกลับไปยืนยันให้แน่ใจอีกทีนะคะ 🙏"
+      : "เดี๋ยวแอดมินขอเช็คกับทีมงานให้แน่ใจก่อนนะคะ 🙏 ขอเบอร์ติดต่อกลับไว้หน่อยได้ไหมคะ เดี๋ยวทีมงานจะติดต่อกลับไปคุยให้ค่ะ";
+  }
+
+  const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage) || (lowConfidence && !!collected.phone);
 
   const effectiveIntent = collected.intent_category || guessIntentFromText(rawMessage);
   const needsBranchInfo =
