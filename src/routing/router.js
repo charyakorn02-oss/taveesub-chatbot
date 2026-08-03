@@ -191,6 +191,16 @@ function stripFabricatedLandmarkMentions(text, rawMessage) {
   return filtered.join("").trim();
 }
 
+function stripFabricatedMaintenanceNumbers(text, rawMessage) {
+  if (!text) return text;
+  const mileagePattern = /\d[\d,]*\s*(กม\.?|กิโล|โล)(?!เมตร)/;
+  const rawHasMileage = mileagePattern.test(rawMessage || "");
+  if (rawHasMileage) return text;
+  const sentences = text.split(/(?<=[.\n])/);
+  const filtered = sentences.filter((s) => !mileagePattern.test(s));
+  return filtered.join("").trim();
+}
+
 async function verifyContactPromiseAgainstStaff(text) {
   if (!text) return text;
   const sentences = text.split(/(?<=[.\n])/);
@@ -222,6 +232,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
     analysis.reply_text_to_customer = stripFabricatedPhoneClosing(analysis.reply_text_to_customer);
     analysis.reply_text_to_customer = stripFabricatedLandmarkMentions(analysis.reply_text_to_customer, rawMessage);
+    analysis.reply_text_to_customer = stripFabricatedMaintenanceNumbers(analysis.reply_text_to_customer, rawMessage);
     analysis.reply_text_to_customer = replaceRudeMan(analysis.reply_text_to_customer);
   }
   const collected = session.collected;
