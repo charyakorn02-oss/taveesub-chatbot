@@ -237,7 +237,6 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
     analysis.reply_text_to_customer = stripFabricatedPhoneClosing(analysis.reply_text_to_customer);
     analysis.reply_text_to_customer = stripFabricatedLandmarkMentions(analysis.reply_text_to_customer, rawMessage);
-    analysis.reply_text_to_customer = stripFabricatedMaintenanceNumbers(analysis.reply_text_to_customer, rawMessage);
     analysis.reply_text_to_customer = replaceRudeMan(analysis.reply_text_to_customer);
   }
   const collected = session.collected;
@@ -539,6 +538,27 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     analysis.reply_text_to_customer = collected.phone
       ? "เดี๋ยวแอดมินขอให้ทีมงานที่เกี่ยวข้องช่วยเช็คแล้วติดต่อกลับไปยืนยันให้แน่ใจอีกทีนะคะ 🙏"
       : "เดี๋ยวแอดมินขอเช็คกับทีมงานให้แน่ใจก่อนนะคะ 🙏 ขอเบอร์ติดต่อกลับไว้หน่อยได้ไหมคะ เดี๋ยวทีมงานจะติดต่อกลับไปคุยให้ค่ะ";
+    try {
+      await store.appendUnansweredQuestion({
+        platform,
+        customerId: userId,
+        customerName: customerName || collected.customer_name || "",
+        phone: collected.phone || "",
+        question: rawMessage || "",
+      });
+    } catch (err) {
+      console.error("[router] appendUnansweredQuestion error:", err.message);
+    }
+    if (process.env.OWNER_LINE_USER_ID) {
+      try {
+        await line.pushMessage(
+          process.env.OWNER_LINE_USER_ID,
+          `มีคำถามที่บอทตอบไม่ได้ค่ะ\nลูกค้า: ${customerName || collected.customer_name || "-"}${collected.phone ? ` (${collected.phone})` : ""}\nคำถาม: ${rawMessage || "-"}\n\nพิมพ์คำตอบกลับมาที่แชทลูกค้าได้เลยผ่านแอดมิน หรือเปิดชีต UnansweredQuestions เพื่อดูรายการทั้งหมดค่ะ`
+        );
+      } catch (err) {
+        console.error("[router] แจ้งเจ้าของร้านผ่าน LINE ไม่สำเร็จ:", err.message);
+      }
+    }
   }
 
   const highIntent = analysis.high_intent_keyword || containsHighIntentKeyword(rawMessage) || (lowConfidence && !!collected.phone);
