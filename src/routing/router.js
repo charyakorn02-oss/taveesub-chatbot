@@ -524,9 +524,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   const needsBranchInfo =
     (effectiveIntent === "service" || effectiveIntent === "trade_in" || effectiveIntent === "buying_new") &&
     !collected.location_text &&
-    !collected.requested_staff_name &&
-    !session.confirmedServiceBranchId &&
-    !session.confirmedGeneralBranchId;
+    !collected.requested_staff_name;
 
   if (
     session.knownHistory &&
