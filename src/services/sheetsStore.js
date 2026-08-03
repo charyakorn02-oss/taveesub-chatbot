@@ -607,6 +607,28 @@ async function getOrCreateSessionsSheet(doc) {
   return sheet;
 }
 
+async function getOrCreateUnansweredSheet(doc) {
+  let sheet = doc.sheetsByTitle['UnansweredQuestions'];
+  if (!sheet) {
+    sheet = await doc.addSheet({ title: 'UnansweredQuestions', headerValues: ['createdAt', 'platform', 'customerId', 'customerName', 'phone', 'question', 'status'] });
+  }
+  return sheet;
+}
+
+async function appendUnansweredQuestion(item) {
+  const doc = await getDoc();
+  const sheet = await getOrCreateUnansweredSheet(doc);
+  await sheet.addRow({
+    createdAt: new Date().toISOString(),
+    platform: item.platform || '',
+    customerId: item.customerId || '',
+    customerName: item.customerName || '',
+    phone: item.phone || '',
+    question: item.question || '',
+    status: 'pending',
+  });
+}
+
 async function saveSessionData(sessionKey, dataObj) {
   const doc = await getDoc();
   const sheet = await getOrCreateSessionsSheet(doc);
@@ -683,6 +705,7 @@ async function getAllPendingBatches() {
 }
 
 module.exports = {
+  appendUnansweredQuestion,
   getActiveBranches,
   getBranchById,
   getAllBranches,
