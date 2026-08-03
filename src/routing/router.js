@@ -635,7 +635,7 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     !needsSalesEssentials &&
     hasPhone &&
     (alreadyHandedOff
-      ? explicitHighIntent
+      ? (explicitHighIntent || (lowConfidence && hasPhone))
       : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
 
   // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
