@@ -193,11 +193,16 @@ function stripFabricatedLandmarkMentions(text, rawMessage) {
 
 function stripFabricatedMaintenanceNumbers(text, rawMessage) {
   if (!text) return text;
-  const mileagePattern = /\d[\d,]*\s*(กม\.?|กิโล|โล)(?!เมตร)/;
-  const rawHasMileage = mileagePattern.test(rawMessage || "");
-  if (rawHasMileage) return text;
+  const mileagePattern = /(\d[\d,]*)\s*(กม\.?|กิโล|โล)(?!เมตร)/g;
+  const rawNumbers = new Set(
+    [...(rawMessage || "").matchAll(mileagePattern)].map((m) => m[1].replace(/,/g, ""))
+  );
   const sentences = text.split(/(?<=[.\n])/);
-  const filtered = sentences.filter((s) => !mileagePattern.test(s));
+  const filtered = sentences.filter((s) => {
+    const matches = [...s.matchAll(mileagePattern)];
+    if (matches.length === 0) return true;
+    return matches.every((m) => rawNumbers.has(m[1].replace(/,/g, "")));
+  });
   return filtered.join("").trim();
 }
 
