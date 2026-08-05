@@ -367,6 +367,46 @@ function mergeCollectedFields(collected, session, analysis, rawMessage) {
   }
 }
 
+async function handlePendingHistoryConfirm(session, collected, rawMessage) {
+  if (session.pendingHistoryConfirm && session.historyConfirmPending) {
+    const pendingHist = session.pendingHistoryConfirm;
+    session.pendingHistoryConfirm = null;
+    session.historyConfirmPending = false;
+    if ((rawMessage || "").trim().length <= 20 && SAME_AS_BEFORE_KEYWORDS.test(rawMessage || "")) {
+      if (pendingHist.phone && !collected.phone) {
+        collected.phone = pendingHist.phone;
+      }
+      if (pendingHist.staffId) {
+        session.pinnedStaffId = pendingHist.staffId;
+      } else if (pendingHist.branchId && !collected.location_text && !collected.requested_staff_name) {
+        if (collected.intent_category === "service") {
+          session.confirmedServiceBranchId = pendingHist.branchId;
+          session.serviceBranchIntroDone = true;
+        } else {
+          session.confirmedGeneralBranchId = pendingHist.branchId;
+          session.locationBranchIntroDone = true;
+        }
+      }
+    } else if ((rawMessage || "").trim().length <= 25 && /สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลล์ไหน/.test(rawMessage || "")) {
+      // บั๊กที่เจอจริง: คำถามยืนยันประวัติเดิมด้านบนไม่ได้ระบุชื่อสาขาจริงไว้ (เขียนแค่ "สาขานี้" ลอยๆ) ทำให้ลูกค้าไม่รู้ว่าหมายถึงสาขาไหน
+      // แล้วถามกลับมาว่า "สาขาไหนนะ" แต่ระบบไม่ตอบคำถามนี้เลย กลับไปถามที่อยู่ใหม่ทันทีเหมือนไม่ได้ยินคำถามของลูกค้า (เอ๋อ)
+      // -> ตอบให้ชัดเจนด้วยชื่อสาขา/เซลล์จริงจากข้อมูลที่ค้างไว้ แล้วคงคำถามเดิมไว้รอคำตอบต่ออีกรอบ ไม่ปล่อยผ่านไปถามเรื่องอื่น
+      session.fallbackCount = 0;
+      session.pendingHistoryConfirm = pendingHist;
+      session.historyConfirmPending = true;
+      const clarifyStaff = pendingHist.staffId ? await store.findStaffById(pendingHist.staffId) : null;
+      const clarifyBranch = pendingHist.branchId ? await store.getBranchById(pendingHist.branchId) : null;
+      if (clarifyStaff) {
+        return `เซลล์ ${clarifyStaff.name}${clarifyBranch ? ` จากสาขา${clarifyBranch.name}` : ""} ค่ะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`;
+      }
+      if (clarifyBranch) {
+        return `สาขา${clarifyBranch.name}ค่ะ 😊 สะดวกใช้สาขาเดิมนี้ต่อเลยไหมคะ`;
+      }
+    }
+  }
+  return null;
+}
+
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   if (analysis && typeof analysis.reply_text_to_customer === "string") {
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
@@ -414,42 +454,10 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     }
   }
 
-  if (session.pendingHistoryConfirm && session.historyConfirmPending) {
-    const pendingHist = session.pendingHistoryConfirm;
-    session.pendingHistoryConfirm = null;
-    session.historyConfirmPending = false;
-    if ((rawMessage || "").trim().length <= 20 && SAME_AS_BEFORE_KEYWORDS.test(rawMessage || "")) {
-      if (pendingHist.phone && !collected.phone) {
-        collected.phone = pendingHist.phone;
-      }
-      if (pendingHist.staffId) {
-        session.pinnedStaffId = pendingHist.staffId;
-      } else if (pendingHist.branchId && !collected.location_text && !collected.requested_staff_name) {
-        if (collected.intent_category === "service") {
-          session.confirmedServiceBranchId = pendingHist.branchId;
-          session.serviceBranchIntroDone = true;
-        } else {
-          session.confirmedGeneralBranchId = pendingHist.branchId;
-          session.locationBranchIntroDone = true;
-        }
-      }
-    } else if ((rawMessage || "").trim().length <= 25 && /สาขาไหน|สายไหน|ที่ไหน|อันไหน|คนไหน|ใครนะ|ใครหนะ|หมายถึงไหน|สาขาอะไร|เซลล์ไหน/.test(rawMessage || "")) {
-      // บั๊กที่เจอจริง: คำถามยืนยันประวัติเดิมด้านบนไม่ได้ระบุชื่อสาขาจริงไว้ (เขียนแค่ "สาขานี้" ลอยๆ) ทำให้ลูกค้าไม่รู้ว่าหมายถึงสาขาไหน
-      // แล้วถามกลับมาว่า "สาขาไหนนะ" แต่ระบบไม่ตอบคำถามนี้เลย กลับไปถามที่อยู่ใหม่ทันทีเหมือนไม่ได้ยินคำถามของลูกค้า (เอ๋อ)
-      // -> ตอบให้ชัดเจนด้วยชื่อสาขา/เซลล์จริงจากข้อมูลที่ค้างไว้ แล้วคงคำถามเดิมไว้รอคำตอบต่ออีกรอบ ไม่ปล่อยผ่านไปถามเรื่องอื่น
-      session.fallbackCount = 0;
-      session.pendingHistoryConfirm = pendingHist;
-      session.historyConfirmPending = true;
-      const clarifyStaff = pendingHist.staffId ? await store.findStaffById(pendingHist.staffId) : null;
-      const clarifyBranch = pendingHist.branchId ? await store.getBranchById(pendingHist.branchId) : null;
-      if (clarifyStaff) {
-        return `เซลล์ ${clarifyStaff.name}${clarifyBranch ? ` จากสาขา${clarifyBranch.name}` : ""} ค่ะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`;
-      }
-      if (clarifyBranch) {
-        return `สาขา${clarifyBranch.name}ค่ะ 😊 สะดวกใช้สาขาเดิมนี้ต่อเลยไหมคะ`;
-      }
-    }
-  }
+  const __histConfirmReply = await handlePendingHistoryConfirm(session, collected, rawMessage);
+  if (__histConfirmReply) return __histConfirmReply;
+
+  
 
   // บั๊กที่เจอจริง: เดิมเงื่อนไขนี้บังคับ intent_category ต้องเป็น "buying_new" เป๊ะๆ เท่านั้นถึงจะเรียก Google Maps จริงมาวัดระยะ/หาสาขาใกล้สุดให้
   // ทำให้เคสลูกค้าถาม "มีสาขาไหนบ้าง" พร้อมบอกพื้นที่มาในข้อความเดียวกัน (ยังไม่ทันเข้าสู่ flow ซื้อรถแบบเป็นขั้นตอน) หลุดไปให้ Claude ตอบเอง
