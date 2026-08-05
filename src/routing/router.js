@@ -407,6 +407,49 @@ async function handlePendingHistoryConfirm(session, collected, rawMessage) {
   return null;
 }
 
+async function handleHistoryConfirmAsk(session, collected, analysis, effectiveIntent, needsBranchInfo) {
+  if (
+    session.knownHistory &&
+    !session.historyConfirmAsked &&
+    (effectiveIntent === "service" || effectiveIntent === "trade_in" || effectiveIntent === "buying_new") &&
+    (needsBranchInfo || !collected.phone)
+  ) {
+    session.historyConfirmAsked = true;
+    const hist = session.knownHistory;
+    const histBranch = hist.branchId ? await store.getBranchById(hist.branchId) : null;
+    const histStaff = hist.staffId ? await store.findStaffById(hist.staffId) : null;
+    const histStaffActive = histStaff && String(histStaff.active).toUpperCase() === "TRUE";
+    const detailParts = [];
+    if (histStaffActive) {
+      detailParts.push(`เซลล์ ${histStaff.name}`);
+    } else if (histBranch) {
+      detailParts.push(`สาขา ${histBranch.name}`);
+    }
+    if (hist.phone) detailParts.push(`เบอร์ ${normalizePhone(hist.phone)}`);
+    if (detailParts.length > 0) {
+      session.fallbackCount = 0;
+      session.historyConfirmPending = true;
+      session.pendingHistoryConfirm = {
+        branchId: histBranch ? histBranch.id : null,
+        phone: normalizePhone(hist.phone) || null,
+        staffId: histStaffActive ? hist.staffId : null,
+      };
+      // บั๊กที่เจอจริง: เดิมข้อความนี้เขียนแค่ "สาขานี้" ลอยๆ โดยไม่เคยระบุชื่อสาขาจริงเลยสักคำ ทำให้ลูกค้าไม่รู้ว่า "สาขานี้" หมายถึงสาขาไหน
+      // ต้องถามกลับมาเอง ("สาขาไหนนะ") ซึ่งระบบเดิมก็ไม่ตอบคำถามนี้อีก (ดูจุดแก้ QUESTION_ABOUT_HISTORY_KEYWORDS ด้านบน) -> แก้ต้นตอด้วยการใส่ชื่อสาขาจริงลงในคำถามตั้งแต่แรกเลย
+      const branchPhrase = histBranch ? ` ที่สาขา${histBranch.name}` : "";
+      const historyQuestion = histStaffActive
+        ? `แอดมินเห็นว่าพี่เคยคุยกับเซลล์ ${histStaff.name}${branchPhrase} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`
+        : `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
+      const baseReply = (analysis.reply_text_to_customer || "").trim();
+      if (effectiveIntent === "service") {
+        return baseReply || historyQuestion;
+      }
+      return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
+    }
+  }
+  return null;
+}
+
 async function handleTurn({ session, analysis, rawMessage, platform, userId, customerName, replyContext }) {
   if (analysis && typeof analysis.reply_text_to_customer === "string") {
     analysis.reply_text_to_customer = await verifyContactPromiseAgainstStaff(analysis.reply_text_to_customer);
@@ -631,45 +674,10 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
     !collected.location_text &&
     !collected.requested_staff_name;
 
-  if (
-    session.knownHistory &&
-    !session.historyConfirmAsked &&
-    (effectiveIntent === "service" || effectiveIntent === "trade_in" || effectiveIntent === "buying_new") &&
-    (needsBranchInfo || !collected.phone)
-  ) {
-    session.historyConfirmAsked = true;
-    const hist = session.knownHistory;
-    const histBranch = hist.branchId ? await store.getBranchById(hist.branchId) : null;
-    const histStaff = hist.staffId ? await store.findStaffById(hist.staffId) : null;
-    const histStaffActive = histStaff && String(histStaff.active).toUpperCase() === "TRUE";
-    const detailParts = [];
-    if (histStaffActive) {
-      detailParts.push(`เซลล์ ${histStaff.name}`);
-    } else if (histBranch) {
-      detailParts.push(`สาขา ${histBranch.name}`);
-    }
-    if (hist.phone) detailParts.push(`เบอร์ ${normalizePhone(hist.phone)}`);
-    if (detailParts.length > 0) {
-      session.fallbackCount = 0;
-      session.historyConfirmPending = true;
-      session.pendingHistoryConfirm = {
-        branchId: histBranch ? histBranch.id : null,
-        phone: normalizePhone(hist.phone) || null,
-        staffId: histStaffActive ? hist.staffId : null,
-      };
-      // บั๊กที่เจอจริง: เดิมข้อความนี้เขียนแค่ "สาขานี้" ลอยๆ โดยไม่เคยระบุชื่อสาขาจริงเลยสักคำ ทำให้ลูกค้าไม่รู้ว่า "สาขานี้" หมายถึงสาขาไหน
-      // ต้องถามกลับมาเอง ("สาขาไหนนะ") ซึ่งระบบเดิมก็ไม่ตอบคำถามนี้อีก (ดูจุดแก้ QUESTION_ABOUT_HISTORY_KEYWORDS ด้านบน) -> แก้ต้นตอด้วยการใส่ชื่อสาขาจริงลงในคำถามตั้งแต่แรกเลย
-      const branchPhrase = histBranch ? ` ที่สาขา${histBranch.name}` : "";
-      const historyQuestion = histStaffActive
-        ? `แอดมินเห็นว่าพี่เคยคุยกับเซลล์ ${histStaff.name}${branchPhrase} มาก่อนนะคะ 😊 สนใจคุยกับคนเดิมเลยไหมคะ`
-        : `แอดมินเห็นว่าพี่เคยติดต่อร้านเรามาก่อนนะคะ 😊 ครั้งก่อนพี่ใช้ ${detailParts.join(" และ ")} ใช่ไหมคะ พี่สะดวกใช้ข้อมูลเดิมนี้ต่อเลย หรือมีอันใหม่สะดวกกว่าแจ้งแอดมินได้เลยค่ะ`;
-      const baseReply = (analysis.reply_text_to_customer || "").trim();
-      if (effectiveIntent === "service") {
-        return baseReply || historyQuestion;
-      }
-      return baseReply ? `${baseReply}\n\n${historyQuestion}` : historyQuestion;
-    }
-  }
+  const __historyAskReply = await handleHistoryConfirmAsk(session, collected, analysis, effectiveIntent, needsBranchInfo);
+  if (__historyAskReply) return __historyAskReply;
+
+  
 
   const routingState = computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, analysis, session, highIntent, lowConfidence, rawMessage);
   const { needsServiceEssentials, needsSalesEssentials, hasPhone, claudeSaysComplete, alreadyHandedOff, explicitHighIntent, shouldHandoff } = routingState;
