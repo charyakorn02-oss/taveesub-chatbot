@@ -13,6 +13,48 @@ const MAX_ATTEMPTS = 3; // เผื่อ network สะดุดตอน serv
 // ตั้งค่า CLAUDE_MODEL ใน env ได้ถ้าอยากเปลี่ยนกลับไปใช้รุ่นอื่นภายหลัง
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
+const ANALYSIS_TOOL = {
+  name: "submit_customer_analysis",
+  description:
+    "ส่งผลวิเคราะห์ข้อความล่าสุดของลูกค้า พร้อมข้อความที่จะตอบกลับ ต้องเรียกเครื่องมือนี้ทุกครั้งเพื่อสรุปสถานะบทสนทนาเป็นข้อมูลที่ระบบไปใช้ต่อ",
+  input_schema: {
+    type: "object",
+    properties: {
+      reply_text_to_customer: {
+        type: "string",
+        description: "ข้อความที่จะตอบกลับลูกค้า เป็นภาษาไทยธรรมชาติ ไม่มี markdown",
+      },
+      intent_category: {
+        type: ["string", "null"],
+        enum: ["buying_new", "trade_in", "service", "general", null],
+      },
+      customer_name: { type: ["string", "null"] },
+      model_or_issue: { type: ["string", "null"] },
+      delivery_preference: {
+        type: ["string", "null"],
+        enum: ["pickup_at_branch", "home_delivery", null],
+      },
+      location_text: { type: ["string", "null"] },
+      requested_staff_name: { type: ["string", "null"] },
+      preferred_date: { type: ["string", "null"] },
+      phone: { type: ["string", "null"] },
+      high_intent_keyword: { type: "boolean" },
+      in_scope: { type: "boolean" },
+      has_confident_answer: { type: "boolean" },
+      data_complete: { type: "boolean" },
+      fallback: { type: "boolean" },
+    },
+    required: [
+      "reply_text_to_customer",
+      "intent_category",
+      "in_scope",
+      "has_confident_answer",
+      "data_complete",
+    ],
+  },
+};
+
+
 // จำกัดประวัติแชทที่ส่งไปให้ Claude แต่ละรอบ (นับเป็นจำนวนข้อความ ไม่ใช่จำนวนเทิร์น) กันไม่ให้ input token
 // โตขึ้นเรื่อยๆ ตามความยาวการสนทนา ข้อมูลสำคัญ (collected fields) ถูกเก็บแยกไว้ใน session.collected อยู่แล้ว
 // ไม่ได้ผูกกับ history ตรงนี้ ตัดประวัติเก่าทิ้งจึงไม่กระทบความแม่นยำของข้อมูลที่เก็บสะสมไว้
@@ -110,6 +152,8 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
               cache_control: { type: "ephemeral", ttl: "1h" },
             },
           ],
+          tools: [ANALYSIS_TOOL],
+          tool_choice: { type: "tool", name: "submit_customer_analysis" },
           messages,
         },
         {
@@ -123,6 +167,18 @@ async function analyzeMessage(history, latestMessage, fallbackCount = 0, collect
           timeout: 20000,
         }
       );
+
+      const toolBlock = res.data.content.find(
+        (c) => c.type === "tool_use" && c.name === "submit_customer_analysis"
+      );
+      if (
+        toolBlock &&
+        toolBlock.input &&
+        typeof toolBlock.input.reply_text_to_customer === "string" &&
+        toolBlock.input.reply_text_to_customer.trim()
+      ) {
+        return toolBlock.input;
+      }
 
       const textBlock = res.data.content.find((c) => c.type === "text");
       const raw = textBlock ? textBlock.text : "{}";
