@@ -28,13 +28,21 @@ const ANALYSIS_TOOL = {
         type: ["string", "null"],
         enum: ["buying_new", "trade_in", "service", "general", null],
       },
-      customer_name: { type: ["string", "null"] },
+      customer_name: {
+        type: ["string", "null"],
+        description:
+          "ชื่อเรียกของลูกค้า (ชื่อคน) เท่านั้น ห้ามใส่ชื่อสถานที่ ทำเล ย่าน หรือชื่อสาขาลงในฟิลด์นี้เด็ดขาด",
+      },
       model_or_issue: { type: ["string", "null"] },
       delivery_preference: {
         type: ["string", "null"],
         enum: ["pickup_at_branch", "home_delivery", null],
       },
-      location_text: { type: ["string", "null"] },
+      location_text: {
+        type: ["string", "null"],
+        description:
+          "ทำเล พื้นที่ ย่าน หรือสถานที่ใกล้เคียงที่ลูกค้าอยู่ ใช้หาสาขาที่ใกล้ที่สุด เช่นชื่อย่าน ชื่อถนน ชื่อห้าง ชื่ออำเภอ/ตำบล ถ้าลูกค้าตอบคำถามที่ถามหาที่อยู่/ทำเล ให้ใส่คำตอบนั้นไว้ในฟิลด์นี้ ไม่ใช่ customer_name",
+      },
       requested_staff_name: { type: ["string", "null"] },
       preferred_date: { type: ["string", "null"] },
       phone: { type: ["string", "null"] },
