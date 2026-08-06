@@ -692,7 +692,12 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
     if (hasPhone && needsBranchInfo) {
-      return "ขอบคุณที่ให้เบอร์ติดต่อกลับนะคะ 😊 พี่อยู่แถวไหนคะ จะได้แนะนำสาขาที่ใกล้ที่สุดให้ค่ะ";
+      const allBranches = await store.getActiveBranches();
+      if (session) {
+        session.pendingBranchChoiceIds = allBranches.map((b) => b.id);
+      }
+      const branchList = allBranches.map((b) => `- ${b.name}`).join("\n");
+      return `ขอบคุณที่ให้เบอร์ติดต่อกลับนะคะ 😊 พี่อยู่แถวไหนคะ จะได้แนะนำสาขาที่ใกล้ที่สุดให้ค่ะ หรือจะเลือกจากสาขาทั้งหมดของเราเลยก็ได้ค่ะ\n\n${branchList}`;
     }
     return (
       analysis.reply_text_to_customer ||
