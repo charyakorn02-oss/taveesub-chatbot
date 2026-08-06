@@ -36,6 +36,16 @@ app.get("/debug/geocode", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get("/debug/gemini", async (req, res) => {
+  try {
+    const gemini = require("./services/gemini");
+    const q = req.query.q || "ทดสอบหน่อย";
+    const result = await gemini.analyzeMessage([], q, 0, null, null);
+    res.json({ ok: true, result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message, stack: (err.stack || "").slice(0, 1000) });
+  }
+});
 app.get("/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
