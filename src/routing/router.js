@@ -258,9 +258,10 @@ function computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, ana
     !needsServiceEssentials &&
     !needsSalesEssentials &&
     hasPhone &&
-    (alreadyHandedOff
-      ? (explicitHighIntent || (lowConfidence && hasPhone))
-      : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT));
+    ((lowConfidence && hasPhone) ||
+      (alreadyHandedOff
+        ? explicitHighIntent
+        : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT)));
 
   // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
   // เพื่อให้ debug ง่ายขึ้น ไม่ต้องไล่ตัวแปรกระจัดกระจายหลายจุดแบบเดิมเวลาบอทตอบวนซ้ำ/ไม่ยอมส่งต่อ
