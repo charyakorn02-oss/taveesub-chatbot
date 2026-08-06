@@ -342,6 +342,9 @@ function mergeCollectedFields(collected, session, analysis, rawMessage) {
     }
     collected.intent_category = newIntent;
   }
+  if (collected.intent_category === "general" && SERVICE_KEYWORDS_RE.test(rawMessage || "")) {
+    collected.intent_category = "service";
+  }
   if (UNDECIDED_CONSULT_KEYWORDS.test(rawMessage || "")) {
     collected.intent_category = "general";
   }
@@ -727,7 +730,12 @@ async function performHandoff({ collected, session, rawMessage, platform, userId
 }
 
 function resolveCustomerName(collected, customerName) {
-  return collected.customer_name || customerName || "";
+  const candidate = (collected.customer_name || "").trim();
+  const location = (collected.location_text || "").trim();
+  if (candidate && location && candidate === location) {
+    return customerName || "";
+  }
+  return candidate || customerName || "";
 }
 
 async function resolveGeneralBranch(collected, session) {
