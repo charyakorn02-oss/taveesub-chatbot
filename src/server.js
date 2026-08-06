@@ -43,7 +43,7 @@ app.get("/debug/gemini", async (req, res) => {
     const result = await gemini.analyzeMessage([], q, 0, null, null);
     res.json({ ok: true, result });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message, stack: (err.stack || "").slice(0, 1000) });
+    res.status(500).json({ ok: false, error: err.message, responseData: err.responseData || null, stack: (err.stack || "").slice(0, 1000) });
   }
 });
 app.get("/health", (req, res) => {
