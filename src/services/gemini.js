@@ -184,6 +184,9 @@ async function analyzeMessage(
       console.warn(lastErr.message);
     } catch (err) {
       lastErr = err;
+      if (err.response && err.response.data) {
+        lastErr.responseData = err.response.data;
+      }
       console.warn(`[gemini] request failed on attempt ${attempt}: ${err.message}`);
     }
   }
