@@ -74,3 +74,25 @@ function toRad(deg) {
 }
 
 module.exports = { geocode, isServiceArea, haversineKm };
+
+
+// --- patch: reject country-level (too coarse) geocode matches ---
+// Google sometimes falls back to matching the whole country ("ประเทศไทย")
+// when a short/ambiguous place name can't be resolved to a specific point.
+// Silently accepting that centroid caused nearest-branch matching to
+// default to HQ. Treat a country-level match as "not found" instead.
+const __originalGeocode = module.exports.geocode;
+module.exports.geocode = async function (locationText) {
+  const result = await __originalGeocode(locationText);
+  if (
+    result &&
+    result.formattedAddress &&
+    result.formattedAddress.trim() === "ประเทศไทย"
+  ) {
+    console.warn(
+      `[geocode] rejected country-level match for "${locationText}" (too coarse), treating as not found`
+    );
+    return null;
+  }
+  return result;
+};
