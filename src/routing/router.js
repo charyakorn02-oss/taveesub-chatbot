@@ -255,13 +255,15 @@ function computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, ana
   // ต้องใช้แค่ containsHighIntentKeyword (regex คำชัดเจนตายตัวอย่าง "จอง"/"โอนเงิน") เท่านั้นถึงจะยอมส่งซ้ำได้
   const explicitHighIntent = containsHighIntentKeyword(rawMessage);
   const shouldHandoff =
-    !needsServiceEssentials &&
-    !needsSalesEssentials &&
     hasPhone &&
-    ((lowConfidence && hasPhone) ||
-      (alreadyHandedOff
-        ? explicitHighIntent
-        : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT)));
+    (
+      lowConfidence ||
+      (!needsServiceEssentials &&
+        !needsSalesEssentials &&
+        (alreadyHandedOff
+          ? explicitHighIntent
+          : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT)))
+    );
 
   // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
   // เพื่อให้ debug ง่ายขึ้น ไม่ต้องไล่ตัวแปรกระจัดกระจายหลายจุดแบบเดิมเวลาบอทตอบวนซ้ำ/ไม่ยอมส่งต่อ
