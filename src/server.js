@@ -6,6 +6,7 @@ const express = require("express");
 const facebookWebhook = require("./webhooks/facebookWebhook");
 const lineWebhook = require("./webhooks/lineWebhook"); 
 const store = require("./services/store");
+const { geocode, isServiceArea } = require("./services/geocode");
 const line = require("./services/line");
 
 const app = express();
@@ -23,6 +24,18 @@ app.get("/", (req, res) => {
   res.send("Taveesub Yanyont chatbot server กำลังทำงานอยู่ค่ะ ✅");
 });
 
+app.get("/debug/geocode", async (req, res) => {
+  try {
+    const q = req.query.q || "";
+    const hasKey = !!process.env.GOOGLE_MAPS_API_KEY;
+    const keyLen = (process.env.GOOGLE_MAPS_API_KEY || "").length;
+    const geo = await geocode(q);
+    const inArea = geo ? isServiceArea(geo.province) : null;
+    res.json({ hasKey, keyLen, query: q, geo, inArea });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get("/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
