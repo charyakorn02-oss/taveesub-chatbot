@@ -256,13 +256,14 @@ function computeHandoffDecision(effectiveIntent, needsBranchInfo, collected, ana
   const explicitHighIntent = containsHighIntentKeyword(rawMessage);
   const shouldHandoff =
     hasPhone &&
+    !needsBranchInfo &&
     (
       lowConfidence ||
       (!needsServiceEssentials &&
         !needsSalesEssentials &&
         (alreadyHandedOff
           ? explicitHighIntent
-          : (claudeSaysComplete || (highIntent && !needsBranchInfo) || session.fallbackCount >= FALLBACK_LIMIT)))
+          : (claudeSaysComplete || session.fallbackCount >= FALLBACK_LIMIT)))
     );
 
   // รวมทุกเงื่อนไข "พร้อมส่งต่อหรือยัง" ไว้ในจุดเดียว (ยังใช้สูตรเดิมทุกอย่าง ไม่เปลี่ยน behavior)
@@ -690,6 +691,9 @@ async function handleTurn({ session, analysis, rawMessage, platform, userId, cus
 
   if (!shouldHandoff) {
     session.fallbackCount = (session.fallbackCount || 0) + 1;
+    if (hasPhone && needsBranchInfo) {
+      return "ขอบคุณที่ให้เบอร์ติดต่อกลับนะคะ 😊 พี่อยู่แถวไหนคะ จะได้แนะนำสาขาที่ใกล้ที่สุดให้ค่ะ";
+    }
     return (
       analysis.reply_text_to_customer ||
       "ขอบคุณที่บอกแอดมินนะคะ 😊 เดี๋ยวแอดมินรับเรื่องต่อให้เลยนะคะ ขอทราบเบอร์ติดต่อกลับได้ไหมคะ 🙏"
