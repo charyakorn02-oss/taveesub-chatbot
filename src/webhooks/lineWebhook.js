@@ -3,7 +3,7 @@
 
 const express = require("express");
 const router = express.Router();
-const claude = require("../services/claude");
+const claude = require("../services/gemini");
 const line = require("../services/line");
 const routing = require("../routing/router");
 const store = require("../services/store");
